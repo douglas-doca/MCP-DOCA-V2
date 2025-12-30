@@ -1,0 +1,227 @@
+// ============================================
+// MCP-DOCA-V2 - Response Agent
+// Agente de Respostas Inteligentes
+// ============================================
+
+import { logger } from '../utils/logger.js';
+import { aiService } from './ai.service.js';
+import { supabaseService } from './supabase.service.js';
+import { 
+  Conversation, 
+  Message, 
+  AIMessage,
+  ConversationStatus 
+} from '../types/index.js';
+
+interface ResponseAgentConfig {
+  maxContextMessages: number;
+  responseDelayMs: number;
+  systemPrompt: string;
+  businessInfo: string;
+  tone: 'formal' | 'casual' | 'professional';
+  enableSentimentAnalysis: boolean;
+  enableIntentDetection: boolean;
+  escalationKeywords: string[];
+}
+
+interface ProcessedResponse {
+  response: string;
+  intent?: string;
+  sentiment?: {
+    type: 'positive' | 'neutral' | 'negative';
+    score: number;
+  };
+  shouldEscalate: boolean;
+  escalationReason?: string;
+  suggestedActions?: string[];
+}
+
+export class ResponseAgent {
+  private config: ResponseAgentConfig;
+
+  constructor(config?: Partial<ResponseAgentConfig>) {
+    this.config = {
+      maxContextMessages: config?.maxContextMessages || 10,
+      responseDelayMs: config?.responseDelayMs || 1000,
+      systemPrompt: config?.systemPrompt || this.getDefaultSystemPrompt(),
+      businessInfo: config?.businessInfo || '',
+      tone: config?.tone || 'professional',
+      enableSentimentAnalysis: config?.enableSentimentAnalysis ?? false,
+      enableIntentDetection: config?.enableIntentDetection ?? false,
+      escalationKeywords: config?.escalationKeywords || [
+        'falar com humano',
+        'atendente',
+        'gerente',
+        'reclamação',
+      ],
+    };
+
+    logger.agent('Response Agent initialized', { 
+      tone: this.config.tone,
+      maxContext: this.config.maxContextMessages 
+    });
+  }
+
+  async processMessage(
+    phone: string,
+    chatId: string,
+    userMessage: string
+  ): Promise<ProcessedResponse> {
+    const timer = logger.startTimer('Response Agent - Process Message');
+
+    try {
+      // 1. Buscar ou criar conversa
+      const conversation = await supabaseService.getOrCreateConversation(phone, chatId);
+
+      // 2. Salvar mensagem do usuário
+      await supabaseService.addMessage(conversation.id, {
+        role: 'user',
+        content: userMessage,
+        timestamp: new Date(),
+      });
+
+      // 3. Atualizar status da conversa
+      await supabaseService.updateConversationStatus(conversation.id, 'active');
+
+      // 4. Verificar escalação
+      const escalationCheck = this.checkEscalation(userMessage);
+      if (escalationCheck.shouldEscalate) {
+        await supabaseService.updateConversationStatus(conversation.id, 'waiting_response');
+        return {
+          response: this.getEscalationResponse(escalationCheck.reason!),
+          shouldEscalate: true,
+          escalationReason: escalationCheck.reason,
+        };
+      }
+
+      // 5. Gerar resposta com IA
+      const response = await this.generateResponse(conversation, userMessage);
+
+      // 6. Salvar resposta
+      await supabaseService.addMessage(conversation.id, {
+        role: 'assistant',
+        content: response,
+        timestamp: new Date(),
+      });
+
+      timer();
+
+      return {
+        response,
+        shouldEscalate: false,
+      };
+
+    } catch (error) {
+      logger.error('Error processing message', error, 'AGENT');
+      throw error;
+    }
+  }
+
+  private async generateResponse(
+    conversation: Conversation,
+    userMessage: string
+  ): Promise<string> {
+    // Buscar mensagens recentes para contexto
+    const recentMessages = await supabaseService.getRecentMessages(
+      conversation.id, 
+      this.config.maxContextMessages
+    );
+
+    // Montar histórico para IA
+    const aiMessages: AIMessage[] = recentMessages.map((msg) => ({
+      role: msg.role as 'user' | 'assistant',
+      content: msg.content,
+    }));
+
+    // Construir system prompt
+    const systemPrompt = await this.buildSystemPrompt(conversation);
+
+    // Gerar resposta
+    const response = await aiService.chat(userMessage, systemPrompt, aiMessages);
+
+    return response;
+  }
+
+  private async buildSystemPrompt(conversation: Conversation): Promise<string> {
+    const lead = conversation.phone ? await supabaseService.getLeadByPhone(conversation.phone) : null;
+
+    let prompt = this.config.systemPrompt;
+
+    // Adicionar info do negócio
+    if (this.config.businessInfo) {
+      prompt += `\n\nSobre o negócio:\n${this.config.businessInfo}`;
+    }
+
+    // Adicionar info do lead
+    if (lead?.name) {
+      prompt += `\n\nO cliente se chama ${lead.name}.`;
+    }
+
+    // Adicionar instruções de tom
+    prompt += this.getToneInstructions();
+
+    return prompt;
+  }
+
+  private checkEscalation(message: string): { shouldEscalate: boolean; reason?: string } {
+    const lowerMessage = message.toLowerCase();
+
+    for (const keyword of this.config.escalationKeywords) {
+      if (lowerMessage.includes(keyword.toLowerCase())) {
+        return {
+          shouldEscalate: true,
+          reason: `Palavra-chave detectada: "${keyword}"`,
+        };
+      }
+    }
+
+    return { shouldEscalate: false };
+  }
+
+  private getEscalationResponse(reason: string): string {
+    return `Entendi que você precisa de um atendimento mais especializado. 🤝
+
+Vou transferir você para um de nossos atendentes humanos que poderá te ajudar melhor.
+
+Por favor, aguarde um momento que logo alguém entrará em contato!`;
+  }
+
+  private getDefaultSystemPrompt(): string {
+    return `Você é um assistente virtual inteligente e prestativo da DOCA Agência IA.
+
+Diretrizes:
+- Seja cordial e profissional
+- Responda de forma concisa e direta
+- Use emojis moderadamente para tornar a conversa mais amigável
+- Se não souber algo, seja honesto
+- Sempre tente ajudar o cliente a resolver seu problema
+- Direcione para conversão quando apropriado (agendamento, venda, contato)
+
+Importante:
+- Nunca invente informações
+- Não faça promessas que não pode cumprir
+- Se o cliente estiver irritado, seja empático`;
+  }
+
+  private getToneInstructions(): string {
+    switch (this.config.tone) {
+      case 'formal':
+        return `\n\nTom: Formal e respeitoso. Use "senhor/senhora", evite gírias.`;
+      case 'casual':
+        return `\n\nTom: Casual e descontraído. Pode usar emojis e linguagem do dia-a-dia.`;
+      case 'professional':
+      default:
+        return `\n\nTom: Profissional mas amigável. Equilibre formalidade com cordialidade.`;
+    }
+  }
+
+  setSystemPrompt(prompt: string): void {
+    this.config.systemPrompt = prompt;
+  }
+
+  setBusinessInfo(info: string): void {
+    this.config.businessInfo = info;
+  }
+}
+
+export const responseAgent = new ResponseAgent();

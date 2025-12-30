@@ -1,0 +1,27 @@
+{"timestamp":"2025-12-25T13:36:18.118Z","level":"error","message":"Error processing message","data":{},"context":"AGENT"}
+{"timestamp":"2025-12-25T13:36:18.119Z","level":"error","message":"Error processing message","data":{},"context":"WEBHOOK"}
+{"timestamp":"2025-12-25T13:36:18.419Z","level":"error","message":"WAHA request failed","data":{"url":"http://host.docker.internal:3001/api/sendText","error":{}},"context":"WAHA"}
+{"timestamp":"2025-12-25T13:36:18.419Z","level":"error","message":"Failed to send error message","data":{},"context":"WEBHOOK"}
+{"timestamp":"2025-12-25T13:38:43.451Z","level":"error","message":"Error processing message","data":{},"context":"AGENT"}
+{"timestamp":"2025-12-25T13:38:43.452Z","level":"error","message":"Error processing message","data":{},"context":"WEBHOOK"}
+{"timestamp":"2025-12-25T13:38:43.660Z","level":"error","message":"WAHA request failed","data":{"url":"http://host.docker.internal:3001/api/sendText","error":{}},"context":"WAHA"}
+{"timestamp":"2025-12-25T13:38:43.660Z","level":"error","message":"Failed to send error message","data":{},"context":"WEBHOOK"}
+{"timestamp":"2025-12-25T13:46:07.505Z","level":"error","message":"Error processing message","data":{},"context":"AGENT"}
+{"timestamp":"2025-12-25T13:46:07.506Z","level":"error","message":"Error processing message","data":{},"context":"WEBHOOK"}
+{"timestamp":"2025-12-25T13:46:07.712Z","level":"error","message":"WAHA request failed","data":{"url":"http://host.docker.internal:3001/api/sendText","error":{}},"context":"WAHA"}
+{"timestamp":"2025-12-25T13:46:07.712Z","level":"error","message":"Failed to send error message","data":{},"context":"WEBHOOK"}
+{"timestamp":"2025-12-25T14:13:47.192Z","level":"error","message":"WAHA request failed","data":{"url":"http://host.docker.internal:3001/api/sendText","error":{}},"context":"WAHA"}
+{"timestamp":"2025-12-25T14:13:47.192Z","level":"error","message":"Error processing message","data":{},"context":"WEBHOOK"}
+{"timestamp":"2025-12-25T14:13:47.400Z","level":"error","message":"WAHA request failed","data":{"url":"http://host.docker.internal:3001/api/sendText","error":{}},"context":"WAHA"}
+{"timestamp":"2025-12-25T14:13:47.400Z","level":"error","message":"Failed to send error message","data":{},"context":"WEBHOOK"}
+{"timestamp":"2025-12-25T15:05:29.760Z","level":"error","message":"Failed to initialize Calendar Service","data":{"errno":-2,"code":"ENOENT","syscall":"open","path":"./google-credentials.json"},"context":"CALENDAR"}
+{"timestamp":"2025-12-25T15:05:43.018Z","level":"error","message":"WAHA request failed","data":{"url":"http://host.docker.internal:3001/api/sendText","error":{}},"context":"WAHA"}
+{"timestamp":"2025-12-25T15:05:43.018Z","level":"error","message":"Error processing message","data":{},"context":"WEBHOOK"}
+{"timestamp":"2025-12-25T15:05:43.231Z","level":"error","message":"WAHA request failed","data":{"url":"http://host.docker.internal:3001/api/sendText","error":{}},"context":"WAHA"}
+{"timestamp":"2025-12-25T15:05:43.231Z","level":"error","message":"Failed to send error message","data":{},"context":"WEBHOOK"}
+{"timestamp":"2025-12-25T15:19:37.584Z","level":"error","message":"Failed to initialize Calendar Service","data":{"errno":-2,"code":"ENOENT","syscall":"open","path":"./google-credentials.json"},"context":"CALENDAR"}
+{"timestamp":"2025-12-25T15:26:31.091Z","level":"error","message":"Failed to initialize Calendar Service","data":{"errno":-2,"code":"ENOENT","syscall":"open","path":"./google-credentials.json"},"context":"CALENDAR"}
+{"timestamp":"2025-12-25T15:26:45.896Z","level":"error","message":"WAHA request failed","data":{"url":"http://host.docker.internal:3001/api/sendText","error":{}},"context":"WAHA"}
+{"timestamp":"2025-12-25T15:26:45.897Z","level":"error","message":"Error processing message","data":{},"context":"WEBHOOK"}
+{"timestamp":"2025-12-25T15:26:46.101Z","level":"error","message":"WAHA request failed","data":{"url":"http://host.docker.internal:3001/api/sendText","error":{}},"context":"WAHA"}
+{"timestamp":"2025-12-25T15:26:46.102Z","level":"error","message":"Failed to send error message","data":{},"context":"WEBHOOK"}

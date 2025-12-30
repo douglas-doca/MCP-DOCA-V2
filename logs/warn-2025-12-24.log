@@ -1,0 +1,11 @@
+{"timestamp":"2025-12-24T18:33:24.963Z","level":"warn","message":"API key not set for provider: openai","context":"AI"}
+{"timestamp":"2025-12-24T18:39:20.623Z","level":"warn","message":"API key not set for provider: openai","context":"AI"}
+{"timestamp":"2025-12-24T18:46:57.156Z","level":"warn","message":"API key not set for provider: openai","context":"AI"}
+{"timestamp":"2025-12-24T19:00:37.580Z","level":"warn","message":"API key not set for provider: openai","context":"AI"}
+{"timestamp":"2025-12-24T19:00:37.586Z","level":"warn","message":"Supabase credentials not configured","context":"SUPABASE"}
+{"timestamp":"2025-12-24T19:09:18.419Z","level":"warn","message":"API key not set for provider: openai","context":"AI"}
+{"timestamp":"2025-12-24T19:09:18.423Z","level":"warn","message":"Supabase credentials not configured","context":"SUPABASE"}
+{"timestamp":"2025-12-24T19:12:06.833Z","level":"warn","message":"Supabase credentials not configured","context":"SUPABASE"}
+{"timestamp":"2025-12-24T19:17:03.680Z","level":"warn","message":"Supabase credentials not configured","context":"SUPABASE"}
+{"timestamp":"2025-12-24T19:18:52.747Z","level":"warn","message":"Supabase credentials not configured","context":"SUPABASE"}
+{"timestamp":"2025-12-24T19:23:35.600Z","level":"warn","message":"Supabase credentials not configured","context":"SUPABASE"}

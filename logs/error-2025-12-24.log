@@ -1,0 +1,33 @@
+{"timestamp":"2025-12-24T19:06:16.778Z","level":"error","message":"WAHA request failed","data":{"url":"http://localhost:3000/api/default/startTyping","error":{}},"context":"WAHA"}
+{"timestamp":"2025-12-24T19:06:16.779Z","level":"error","message":"Error processing message","data":{},"context":"WEBHOOK"}
+{"timestamp":"2025-12-24T19:06:16.781Z","level":"error","message":"WAHA request failed","data":{"url":"http://localhost:3000/api/sendText","error":{}},"context":"WAHA"}
+{"timestamp":"2025-12-24T19:06:16.782Z","level":"error","message":"Failed to send error message","data":{},"context":"WEBHOOK"}
+{"timestamp":"2025-12-24T19:12:29.185Z","level":"error","message":"WAHA request failed","data":{"url":"http://localhost:3001/api/default/startTyping","error":{}},"context":"WAHA"}
+{"timestamp":"2025-12-24T19:12:29.186Z","level":"error","message":"Error processing message","data":{},"context":"WEBHOOK"}
+{"timestamp":"2025-12-24T19:17:17.766Z","level":"error","message":"WAHA request failed","data":{"url":"http://localhost:3001/api/default/startTyping","error":{}},"context":"WAHA"}
+{"timestamp":"2025-12-24T19:17:17.774Z","level":"error","message":"Error processing message","data":{},"context":"WEBHOOK"}
+{"timestamp":"2025-12-24T19:19:11.875Z","level":"error","message":"Supabase request failed","data":{},"context":"SUPABASE"}
+{"timestamp":"2025-12-24T19:19:11.876Z","level":"error","message":"Supabase request failed","data":{},"context":"SUPABASE"}
+{"timestamp":"2025-12-24T19:19:11.876Z","level":"error","message":"Supabase request failed","data":{},"context":"SUPABASE"}
+{"timestamp":"2025-12-24T19:19:11.877Z","level":"error","message":"Supabase request failed","data":{},"context":"SUPABASE"}
+{"timestamp":"2025-12-24T19:19:11.877Z","level":"error","message":"Supabase request failed","data":{},"context":"SUPABASE"}
+{"timestamp":"2025-12-24T19:19:11.877Z","level":"error","message":"Supabase request failed","data":{},"context":"SUPABASE"}
+{"timestamp":"2025-12-24T19:19:11.878Z","level":"error","message":"Supabase request failed","data":{},"context":"SUPABASE"}
+{"timestamp":"2025-12-24T19:19:13.106Z","level":"error","message":"Error processing message","data":{},"context":"AGENT"}
+{"timestamp":"2025-12-24T19:19:13.106Z","level":"error","message":"Supabase request failed","data":{},"context":"SUPABASE"}
+{"timestamp":"2025-12-24T19:19:13.106Z","level":"error","message":"Supabase request failed","data":{},"context":"SUPABASE"}
+{"timestamp":"2025-12-24T19:19:13.106Z","level":"error","message":"Error processing message","data":{},"context":"WEBHOOK"}
+{"timestamp":"2025-12-24T19:23:43.578Z","level":"error","message":"Supabase request failed","data":{},"context":"SUPABASE"}
+{"timestamp":"2025-12-24T19:23:43.579Z","level":"error","message":"Supabase request failed","data":{},"context":"SUPABASE"}
+{"timestamp":"2025-12-24T19:23:43.579Z","level":"error","message":"Supabase request failed","data":{},"context":"SUPABASE"}
+{"timestamp":"2025-12-24T19:23:43.579Z","level":"error","message":"Supabase request failed","data":{},"context":"SUPABASE"}
+{"timestamp":"2025-12-24T19:23:43.579Z","level":"error","message":"Supabase request failed","data":{},"context":"SUPABASE"}
+{"timestamp":"2025-12-24T19:23:43.579Z","level":"error","message":"Supabase request failed","data":{},"context":"SUPABASE"}
+{"timestamp":"2025-12-24T19:23:43.580Z","level":"error","message":"Supabase request failed","data":{},"context":"SUPABASE"}
+{"timestamp":"2025-12-24T19:23:44.703Z","level":"error","message":"Error processing message","data":{},"context":"AGENT"}
+{"timestamp":"2025-12-24T19:23:44.704Z","level":"error","message":"Supabase request failed","data":{},"context":"SUPABASE"}
+{"timestamp":"2025-12-24T19:23:44.704Z","level":"error","message":"Supabase request failed","data":{},"context":"SUPABASE"}
+{"timestamp":"2025-12-24T19:23:44.704Z","level":"error","message":"Error processing message","data":{},"context":"WEBHOOK"}
+{"timestamp":"2025-12-24T19:26:19.707Z","level":"error","message":"Supabase POST messages failed","data":{"status":400,"error":"{\"code\":\"23502\",\"details\":\"Failing row contains (1766604378945-45dykdoor, null, user, Ola, 2025-12-24 19:26:18.945+00, {}).\",\"hint\":null,\"message\":\"null value in column \\\"conversation_id\\\" of relation \\\"messages\\\" violates not-null constraint\"}"},"context":"SUPABASE"}
+{"timestamp":"2025-12-24T19:26:20.860Z","level":"error","message":"Error processing message","data":{},"context":"AGENT"}
+{"timestamp":"2025-12-24T19:26:20.860Z","level":"error","message":"Error processing message","data":{},"context":"WEBHOOK"}

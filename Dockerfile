@@ -1,0 +1,22 @@
+FROM node:20-alpine
+
+ENV TZ=America/Sao_Paulo
+RUN apk add --no-cache tzdata
+
+WORKDIR /app
+
+COPY package*.json ./
+RUN npm ci --only=production
+
+COPY dist/ ./dist/
+COPY public/ ./public/
+
+RUN mkdir -p logs database
+
+EXPOSE 3002
+
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+  CMD wget --no-verbose --tries=1 --spider http://localhost:3002/health || exit 1
+
+CMD ["node", "dist/webhook.js"]
+# Thu Dec 25 13:01:37 UTC 2025

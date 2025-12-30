@@ -1,0 +1,71 @@
+version: '3.8'
+
+services:
+  # Backend MCP
+  mcp-backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: mcp-backend
+    restart: unless-stopped
+    env_file:
+      - .env
+    networks:
+      - traefik_proxy
+      - mcp_internal
+    labels:
+      traefik.enable: "true"
+      traefik.http.routers.mcp-api.rule: "Host(`api.docaperformance.com.br`)"
+      traefik.http.routers.mcp-api.entrypoints: "web,websecure"
+      traefik.http.routers.mcp-api.tls.certresolver: "mytlschallenge"
+      traefik.http.services.mcp-api.loadbalancer.server.port: "3001"
+
+  # Webhook Server
+  mcp-webhook:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: mcp-webhook
+    restart: unless-stopped
+    command: ["node", "dist/webhook.js"]
+    env_file:
+      - .env
+    networks:
+      - traefik_proxy
+      - mcp_internal
+    labels:
+      traefik.enable: "true"
+      traefik.http.routers.mcp-webhook.rule: "Host(`webhook.docaperformance.com.br`)"
+      traefik.http.routers.mcp-webhook.entrypoints: "web,websecure"
+      traefik.http.routers.mcp-webhook.tls.certresolver: "mytlschallenge"
+      traefik.http.services.mcp-webhook.loadbalancer.server.port: "3002"
+
+# Dashboard Frontend
+  mcp-dashboard:
+    build:
+      context: ./mcp-dashboard
+      dockerfile: Dockerfile
+    container_name: mcp-dashboard
+    restart: unless-stopped
+    networks:
+      - traefik_proxy
+      - mcp_internal
+    labels:
+      traefik.enable: "true"
+      traefik.docker.network: "traefik_proxy"
+      # Dashboard principal
+      traefik.http.routers.mcp-dashboard.rule: "Host(`mcp.docaperformance.com.br`)"
+      traefik.http.routers.mcp-dashboard.entrypoints: "websecure"
+      traefik.http.routers.mcp-dashboard.tls.certresolver: "mytlschallenge"
+      traefik.http.services.mcp-dashboard.loadbalancer.server.port: "80"
+      # HTTP redirect
+      traefik.http.routers.mcp-dashboard-http.rule: "Host(`mcp.docaperformance.com.br`)"
+      traefik.http.routers.mcp-dashboard-http.entrypoints: "web"
+      traefik.http.routers.mcp-dashboard-http.middlewares: "redirect-to-https"
+      traefik.http.middlewares.redirect-to-https.redirectscheme.scheme: "https"
+
+networks:
+  traefik_proxy:
+    external: true
+  mcp_internal:
+    driver: bridge

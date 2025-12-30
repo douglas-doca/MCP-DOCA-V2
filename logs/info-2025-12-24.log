@@ -1,0 +1,434 @@
+{"timestamp":"2025-12-24T18:33:24.959Z","level":"info","message":"WAHA Service initialized","data":{"baseUrl":"http://localhost:3000","session":"default"},"context":"WAHA"}
+{"timestamp":"2025-12-24T18:33:24.963Z","level":"info","message":"AI Service initialized","data":{"provider":"openai","model":"gpt-4o-mini"},"context":"AI"}
+{"timestamp":"2025-12-24T18:33:24.964Z","level":"info","message":"Starting mcp-doca-v2 v1.0.0"}
+{"timestamp":"2025-12-24T18:33:24.969Z","level":"info","message":"Connecting transport..."}
+{"timestamp":"2025-12-24T18:33:24.969Z","level":"info","message":"mcp-doca-v2 running on stdio"}
+{"timestamp":"2025-12-24T18:33:24.970Z","level":"info","message":"Tools available: 11"}
+{"timestamp":"2025-12-24T18:33:24.970Z","level":"info","message":"Resources available: 3"}
+{"timestamp":"2025-12-24T18:38:49.049Z","level":"info","message":"Shutting down..."}
+{"timestamp":"2025-12-24T18:39:20.620Z","level":"info","message":"WAHA Service initialized","data":{"baseUrl":"http://localhost:3000","session":"default"},"context":"WAHA"}
+{"timestamp":"2025-12-24T18:39:20.623Z","level":"info","message":"AI Service initialized","data":{"provider":"openai","model":"gpt-4o-mini"},"context":"AI"}
+{"timestamp":"2025-12-24T18:39:20.624Z","level":"info","message":"Starting mcp-doca-v2 v1.0.0"}
+{"timestamp":"2025-12-24T18:39:20.632Z","level":"info","message":"Connecting transport..."}
+{"timestamp":"2025-12-24T18:39:20.633Z","level":"info","message":"mcp-doca-v2 running on stdio"}
+{"timestamp":"2025-12-24T18:39:20.633Z","level":"info","message":"Tools available: 11"}
+{"timestamp":"2025-12-24T18:39:20.633Z","level":"info","message":"Resources available: 3"}
+{"timestamp":"2025-12-24T18:46:49.015Z","level":"info","message":"Shutting down..."}
+{"timestamp":"2025-12-24T18:46:57.160Z","level":"info","message":"AI Service initialized","data":{"provider":"openai","model":"gpt-4o-mini"},"context":"AI"}
+{"timestamp":"2025-12-24T18:46:57.160Z","level":"info","message":"Response Agent initialized","data":{"tone":"professional","maxContext":10},"context":"AGENT"}
+{"timestamp":"2025-12-24T18:46:57.161Z","level":"info","message":"WAHA Service initialized","data":{"baseUrl":"http://localhost:3000","session":"default"},"context":"WAHA"}
+{"timestamp":"2025-12-24T18:46:57.190Z","level":"info","message":"Database tables created","context":"DB"}
+{"timestamp":"2025-12-24T18:46:57.191Z","level":"info","message":"Database initialized","data":{"path":"./database/mcp-doca.db"},"context":"DB"}
+{"timestamp":"2025-12-24T18:46:57.199Z","level":"info","message":"Webhook server running on http://0.0.0.0:3002","context":"WEBHOOK"}
+{"timestamp":"2025-12-24T18:46:57.199Z","level":"info","message":"Available endpoints:","context":"WEBHOOK"}
+{"timestamp":"2025-12-24T18:46:57.200Z","level":"info","message":"  POST /webhook/waha - WAHA webhook","context":"WEBHOOK"}
+{"timestamp":"2025-12-24T18:46:57.200Z","level":"info","message":"  GET  /health       - Health check","context":"WEBHOOK"}
+{"timestamp":"2025-12-24T18:46:57.200Z","level":"info","message":"  GET  /stats        - Statistics","context":"WEBHOOK"}
+{"timestamp":"2025-12-24T18:46:57.201Z","level":"info","message":"  POST /send         - Send message","context":"WEBHOOK"}
+{"timestamp":"2025-12-24T18:46:57.201Z","level":"info","message":"  GET  /conversations?phone=X - Get conversation","context":"WEBHOOK"}
+{"timestamp":"2025-12-24T18:46:57.201Z","level":"info","message":"Webhook server is ready to receive messages!"}
+{"timestamp":"2025-12-24T18:46:57.201Z","level":"info","message":"Configure WAHA to send webhooks to: POST /webhook/waha"}
+{"timestamp":"2025-12-24T18:59:48.789Z","level":"info","message":"Received SIGINT, shutting down gracefully..."}
+{"timestamp":"2025-12-24T18:59:48.795Z","level":"info","message":"Webhook server stopped","context":"WEBHOOK"}
+{"timestamp":"2025-12-24T18:59:48.800Z","level":"info","message":"Database connection closed","context":"DB"}
+{"timestamp":"2025-12-24T19:00:37.585Z","level":"info","message":"AI Service initialized","data":{"provider":"openai","model":"gpt-4o-mini"},"context":"AI"}
+{"timestamp":"2025-12-24T19:00:37.586Z","level":"info","message":"Response Agent initialized","data":{"tone":"professional","maxContext":10},"context":"AGENT"}
+{"timestamp":"2025-12-24T19:00:37.587Z","level":"info","message":"WAHA Service initialized","data":{"baseUrl":"http://localhost:3000","session":"default"},"context":"WAHA"}
+{"timestamp":"2025-12-24T19:00:37.589Z","level":"info","message":"Supabase Service ready","context":"SUPABASE"}
+{"timestamp":"2025-12-24T19:00:37.594Z","level":"info","message":"Webhook server running on http://0.0.0.0:3002","context":"WEBHOOK"}
+{"timestamp":"2025-12-24T19:00:37.594Z","level":"info","message":"Available endpoints:","context":"WEBHOOK"}
+{"timestamp":"2025-12-24T19:00:37.594Z","level":"info","message":"  POST /webhook/waha - WAHA webhook","context":"WEBHOOK"}
+{"timestamp":"2025-12-24T19:00:37.595Z","level":"info","message":"  GET  /health       - Health check","context":"WEBHOOK"}
+{"timestamp":"2025-12-24T19:00:37.595Z","level":"info","message":"  GET  /stats        - Statistics","context":"WEBHOOK"}
+{"timestamp":"2025-12-24T19:00:37.595Z","level":"info","message":"  POST /send         - Send message","context":"WEBHOOK"}
+{"timestamp":"2025-12-24T19:00:37.595Z","level":"info","message":"  GET  /conversations?phone=X - Get conversation","context":"WEBHOOK"}
+{"timestamp":"2025-12-24T19:00:37.596Z","level":"info","message":"Webhook server is ready to receive messages!"}
+{"timestamp":"2025-12-24T19:00:37.596Z","level":"info","message":"Configure WAHA to send webhooks to: POST /webhook/waha"}
+{"timestamp":"2025-12-24T19:03:58.331Z","level":"info","message":"WAHA webhook received","data":{"event":"session.status"},"context":"WEBHOOK"}
+{"timestamp":"2025-12-24T19:04:07.106Z","level":"info","message":"WAHA webhook received","data":{"event":"session.status"},"context":"WEBHOOK"}
+{"timestamp":"2025-12-24T19:06:16.701Z","level":"info","message":"WAHA webhook received","data":{"event":"message","from":"5519991547727@c.us"},"context":"WEBHOOK"}
+{"timestamp":"2025-12-24T19:06:16.702Z","level":"info","message":"Processing message","data":{"phone":"5519991547727","text":"Ola"},"context":"CONV"}
+{"timestamp":"2025-12-24T19:06:16.779Z","level":"info","message":"Sending message","data":{"chatId":"5519991547727@c.us","textLength":75},"context":"WAHA"}
+{"timestamp":"2025-12-24T19:09:15.657Z","level":"info","message":"Received SIGINT, shutting down gracefully..."}
+{"timestamp":"2025-12-24T19:09:15.660Z","level":"info","message":"Webhook server stopped","context":"WEBHOOK"}
+{"timestamp":"2025-12-24T19:09:15.660Z","level":"info","message":"Supabase Service closed","context":"SUPABASE"}
+{"timestamp":"2025-12-24T19:09:18.423Z","level":"info","message":"AI Service initialized","data":{"provider":"openai","model":"gpt-4o-mini"},"context":"AI"}
+{"timestamp":"2025-12-24T19:09:18.424Z","level":"info","message":"Response Agent initialized","data":{"tone":"professional","maxContext":10},"context":"AGENT"}
+{"timestamp":"2025-12-24T19:09:18.424Z","level":"info","message":"WAHA Service initialized","data":{"baseUrl":"http://localhost:3000","session":"default"},"context":"WAHA"}
+{"timestamp":"2025-12-24T19:09:18.425Z","level":"info","message":"Supabase Service ready","context":"SUPABASE"}
+{"timestamp":"2025-12-24T19:09:18.431Z","level":"info","message":"Webhook server running on http://0.0.0.0:3002","context":"WEBHOOK"}
+{"timestamp":"2025-12-24T19:09:18.431Z","level":"info","message":"Available endpoints:","context":"WEBHOOK"}
+{"timestamp":"2025-12-24T19:09:18.431Z","level":"info","message":"  POST /webhook/waha - WAHA webhook","context":"WEBHOOK"}
+{"timestamp":"2025-12-24T19:09:18.431Z","level":"info","message":"  GET  /health       - Health check","context":"WEBHOOK"}
+{"timestamp":"2025-12-24T19:09:18.431Z","level":"info","message":"  GET  /stats        - Statistics","context":"WEBHOOK"}
+{"timestamp":"2025-12-24T19:09:18.432Z","level":"info","message":"  POST /send         - Send message","context":"WEBHOOK"}
+{"timestamp":"2025-12-24T19:09:18.432Z","level":"info","message":"  GET  /conversations?phone=X - Get conversation","context":"WEBHOOK"}
+{"timestamp":"2025-12-24T19:09:18.432Z","level":"info","message":"Webhook server is ready to receive messages!"}
+{"timestamp":"2025-12-24T19:09:18.432Z","level":"info","message":"Configure WAHA to send webhooks to: POST /webhook/waha"}
+{"timestamp":"2025-12-24T19:10:52.198Z","level":"info","message":"Received SIGINT, shutting down gracefully..."}
+{"timestamp":"2025-12-24T19:10:52.200Z","level":"info","message":"Webhook server stopped","context":"WEBHOOK"}
+{"timestamp":"2025-12-24T19:10:52.200Z","level":"info","message":"Supabase Service closed","context":"SUPABASE"}
+{"timestamp":"2025-12-24T19:12:06.829Z","level":"info","message":"AI Service initialized","data":{"provider":"anthropic","model":"claude-3-5-haiku-20241022"},"context":"AI"}
+{"timestamp":"2025-12-24T19:12:06.834Z","level":"info","message":"Response Agent initialized","data":{"tone":"professional","maxContext":10},"context":"AGENT"}
+{"timestamp":"2025-12-24T19:12:06.835Z","level":"info","message":"WAHA Service initialized","data":{"baseUrl":"http://localhost:3001","session":"default"},"context":"WAHA"}
+{"timestamp":"2025-12-24T19:12:06.836Z","level":"info","message":"Supabase Service ready","context":"SUPABASE"}
+{"timestamp":"2025-12-24T19:12:06.841Z","level":"info","message":"Webhook server running on http://0.0.0.0:3002","context":"WEBHOOK"}
+{"timestamp":"2025-12-24T19:12:06.841Z","level":"info","message":"Available endpoints:","context":"WEBHOOK"}
+{"timestamp":"2025-12-24T19:12:06.841Z","level":"info","message":"  POST /webhook/waha - WAHA webhook","context":"WEBHOOK"}
+{"timestamp":"2025-12-24T19:12:06.842Z","level":"info","message":"  GET  /health       - Health check","context":"WEBHOOK"}
+{"timestamp":"2025-12-24T19:12:06.842Z","level":"info","message":"  GET  /stats        - Statistics","context":"WEBHOOK"}
+{"timestamp":"2025-12-24T19:12:06.842Z","level":"info","message":"  POST /send         - Send message","context":"WEBHOOK"}
+{"timestamp":"2025-12-24T19:12:06.843Z","level":"info","message":"  GET  /conversations?phone=X - Get conversation","context":"WEBHOOK"}
+{"timestamp":"2025-12-24T19:12:06.843Z","level":"info","message":"Webhook server is ready to receive messages!"}
+{"timestamp":"2025-12-24T19:12:06.843Z","level":"info","message":"Configure WAHA to send webhooks to: POST /webhook/waha"}
+{"timestamp":"2025-12-24T19:12:29.101Z","level":"info","message":"WAHA webhook received","data":{"event":"message","from":"5519991547727@c.us"},"context":"WEBHOOK"}
+{"timestamp":"2025-12-24T19:12:29.102Z","level":"info","message":"Processing message","data":{"phone":"5519991547727","text":"Ola"},"context":"CONV"}
+{"timestamp":"2025-12-24T19:12:29.186Z","level":"info","message":"Sending message","data":{"chatId":"5519991547727@c.us","textLength":75},"context":"WAHA"}
+{"timestamp":"2025-12-24T19:12:30.429Z","level":"info","message":"WAHA webhook received","data":{"event":"message.ack","from":"5519999949516@c.us"},"context":"WEBHOOK"}
+{"timestamp":"2025-12-24T19:12:31.005Z","level":"info","message":"WAHA webhook received","data":{"event":"message.ack","from":"5519999949516@c.us"},"context":"WEBHOOK"}
+{"timestamp":"2025-12-24T19:12:31.028Z","level":"info","message":"WAHA webhook received","data":{"event":"message.ack","from":"5519999949516@c.us"},"context":"WEBHOOK"}
+{"timestamp":"2025-12-24T19:13:41.315Z","level":"info","message":"Received SIGINT, shutting down gracefully..."}
+{"timestamp":"2025-12-24T19:13:41.315Z","level":"info","message":"Webhook server stopped","context":"WEBHOOK"}
+{"timestamp":"2025-12-24T19:13:41.316Z","level":"info","message":"Supabase Service closed","context":"SUPABASE"}
+{"timestamp":"2025-12-24T19:17:03.677Z","level":"info","message":"AI Service initialized","data":{"provider":"anthropic","model":"claude-3-5-haiku-20241022"},"context":"AI"}
+{"timestamp":"2025-12-24T19:17:03.681Z","level":"info","message":"Response Agent initialized","data":{"tone":"professional","maxContext":10},"context":"AGENT"}
+{"timestamp":"2025-12-24T19:17:03.682Z","level":"info","message":"WAHA Service initialized","data":{"baseUrl":"http://localhost:3001","session":"default"},"context":"WAHA"}
+{"timestamp":"2025-12-24T19:17:03.683Z","level":"info","message":"Supabase Service ready","context":"SUPABASE"}
+{"timestamp":"2025-12-24T19:17:03.686Z","level":"info","message":"Webhook server running on http://0.0.0.0:3002","context":"WEBHOOK"}
+{"timestamp":"2025-12-24T19:17:03.686Z","level":"info","message":"Available endpoints:","context":"WEBHOOK"}
+{"timestamp":"2025-12-24T19:17:03.687Z","level":"info","message":"  POST /webhook/waha - WAHA webhook","context":"WEBHOOK"}
+{"timestamp":"2025-12-24T19:17:03.687Z","level":"info","message":"  GET  /health       - Health check","context":"WEBHOOK"}
+{"timestamp":"2025-12-24T19:17:03.687Z","level":"info","message":"  GET  /stats        - Statistics","context":"WEBHOOK"}
+{"timestamp":"2025-12-24T19:17:03.687Z","level":"info","message":"  POST /send         - Send message","context":"WEBHOOK"}
+{"timestamp":"2025-12-24T19:17:03.687Z","level":"info","message":"  GET  /conversations?phone=X - Get conversation","context":"WEBHOOK"}
+{"timestamp":"2025-12-24T19:17:03.687Z","level":"info","message":"Webhook server is ready to receive messages!"}
+{"timestamp":"2025-12-24T19:17:03.687Z","level":"info","message":"Configure WAHA to send webhooks to: POST /webhook/waha"}
+{"timestamp":"2025-12-24T19:17:17.698Z","level":"info","message":"WAHA webhook received","data":{"event":"message","from":"5519991547727@c.us"},"context":"WEBHOOK"}
+{"timestamp":"2025-12-24T19:17:17.700Z","level":"info","message":"Processing message","data":{"phone":"5519991547727","text":"Opa"},"context":"CONV"}
+{"timestamp":"2025-12-24T19:17:17.774Z","level":"info","message":"Sending message","data":{"chatId":"5519991547727@c.us","textLength":75},"context":"WAHA"}
+{"timestamp":"2025-12-24T19:17:18.412Z","level":"info","message":"WAHA webhook received","data":{"event":"message.ack","from":"5519999949516@c.us"},"context":"WEBHOOK"}
+{"timestamp":"2025-12-24T19:17:18.926Z","level":"info","message":"WAHA webhook received","data":{"event":"message.ack","from":"5519999949516@c.us"},"context":"WEBHOOK"}
+{"timestamp":"2025-12-24T19:17:18.949Z","level":"info","message":"WAHA webhook received","data":{"event":"message.ack","from":"5519999949516@c.us"},"context":"WEBHOOK"}
+{"timestamp":"2025-12-24T19:17:26.708Z","level":"info","message":"WAHA webhook received","data":{"event":"message.ack","from":"5519999949516@c.us"},"context":"WEBHOOK"}
+{"timestamp":"2025-12-24T19:17:27.877Z","level":"info","message":"WAHA webhook received","data":{"event":"message.ack","from":"5519999949516@c.us"},"context":"WEBHOOK"}
+{"timestamp":"2025-12-24T19:17:40.089Z","level":"info","message":"Received SIGINT, shutting down gracefully..."}
+{"timestamp":"2025-12-24T19:17:40.090Z","level":"info","message":"Webhook server stopped","context":"WEBHOOK"}
+{"timestamp":"2025-12-24T19:17:40.090Z","level":"info","message":"Supabase Service closed","context":"SUPABASE"}
+{"timestamp":"2025-12-24T19:18:52.744Z","level":"info","message":"AI Service initialized","data":{"provider":"anthropic","model":"claude-3-5-haiku-20241022"},"context":"AI"}
+{"timestamp":"2025-12-24T19:18:52.748Z","level":"info","message":"Response Agent initialized","data":{"tone":"professional","maxContext":10},"context":"AGENT"}
+{"timestamp":"2025-12-24T19:18:52.748Z","level":"info","message":"WAHA Service initialized","data":{"baseUrl":"http://localhost:3001","session":"default"},"context":"WAHA"}
+{"timestamp":"2025-12-24T19:18:52.749Z","level":"info","message":"Supabase Service ready","context":"SUPABASE"}
+{"timestamp":"2025-12-24T19:18:52.755Z","level":"info","message":"Webhook server running on http://0.0.0.0:3002","context":"WEBHOOK"}
+{"timestamp":"2025-12-24T19:18:52.755Z","level":"info","message":"Available endpoints:","context":"WEBHOOK"}
+{"timestamp":"2025-12-24T19:18:52.755Z","level":"info","message":"  POST /webhook/waha - WAHA webhook","context":"WEBHOOK"}
+{"timestamp":"2025-12-24T19:18:52.756Z","level":"info","message":"  GET  /health       - Health check","context":"WEBHOOK"}
+{"timestamp":"2025-12-24T19:18:52.756Z","level":"info","message":"  GET  /stats        - Statistics","context":"WEBHOOK"}
+{"timestamp":"2025-12-24T19:18:52.756Z","level":"info","message":"  POST /send         - Send message","context":"WEBHOOK"}
+{"timestamp":"2025-12-24T19:18:52.756Z","level":"info","message":"  GET  /conversations?phone=X - Get conversation","context":"WEBHOOK"}
+{"timestamp":"2025-12-24T19:18:52.757Z","level":"info","message":"Webhook server is ready to receive messages!"}
+{"timestamp":"2025-12-24T19:18:52.757Z","level":"info","message":"Configure WAHA to send webhooks to: POST /webhook/waha"}
+{"timestamp":"2025-12-24T19:19:11.768Z","level":"info","message":"WAHA webhook received","data":{"event":"message","from":"5519991547727@c.us"},"context":"WEBHOOK"}
+{"timestamp":"2025-12-24T19:19:11.772Z","level":"info","message":"Processing message","data":{"phone":"5519991547727","text":"Ok"},"context":"CONV"}
+{"timestamp":"2025-12-24T19:19:12.916Z","level":"info","message":"Completion successful","data":{"tokens":{"prompt":120,"completion":28,"total":148},"finishReason":"end_turn"},"context":"AI"}
+{"timestamp":"2025-12-24T19:19:13.105Z","level":"info","message":"Completion successful","data":{"tokens":{"prompt":123,"completion":30,"total":153},"finishReason":"end_turn"},"context":"AI"}
+{"timestamp":"2025-12-24T19:19:13.106Z","level":"info","message":"Sending message","data":{"chatId":"5519991547727@c.us","textLength":75},"context":"WAHA"}
+{"timestamp":"2025-12-24T19:19:13.618Z","level":"info","message":"WAHA webhook received","data":{"event":"message.ack","from":"5519999949516@c.us"},"context":"WEBHOOK"}
+{"timestamp":"2025-12-24T19:19:14.163Z","level":"info","message":"WAHA webhook received","data":{"event":"message.ack","from":"5519999949516@c.us"},"context":"WEBHOOK"}
+{"timestamp":"2025-12-24T19:19:14.176Z","level":"info","message":"WAHA webhook received","data":{"event":"message.ack","from":"5519999949516@c.us"},"context":"WEBHOOK"}
+{"timestamp":"2025-12-24T19:20:18.278Z","level":"info","message":"WAHA webhook received","data":{"event":"message.ack","from":"5519999949516@c.us"},"context":"WEBHOOK"}
+{"timestamp":"2025-12-24T19:23:33.726Z","level":"info","message":"Received SIGINT, shutting down gracefully..."}
+{"timestamp":"2025-12-24T19:23:33.727Z","level":"info","message":"Webhook server stopped","context":"WEBHOOK"}
+{"timestamp":"2025-12-24T19:23:33.727Z","level":"info","message":"Supabase Service closed","context":"SUPABASE"}
+{"timestamp":"2025-12-24T19:23:35.597Z","level":"info","message":"AI Service initialized","data":{"provider":"anthropic","model":"claude-3-5-haiku-20241022"},"context":"AI"}
+{"timestamp":"2025-12-24T19:23:35.601Z","level":"info","message":"Response Agent initialized","data":{"tone":"professional","maxContext":10},"context":"AGENT"}
+{"timestamp":"2025-12-24T19:23:35.602Z","level":"info","message":"WAHA Service initialized","data":{"baseUrl":"http://localhost:3001","session":"default"},"context":"WAHA"}
+{"timestamp":"2025-12-24T19:23:35.602Z","level":"info","message":"Supabase Service ready","context":"SUPABASE"}
+{"timestamp":"2025-12-24T19:23:35.606Z","level":"info","message":"Webhook server running on http://0.0.0.0:3002","context":"WEBHOOK"}
+{"timestamp":"2025-12-24T19:23:35.606Z","level":"info","message":"Available endpoints:","context":"WEBHOOK"}
+{"timestamp":"2025-12-24T19:23:35.606Z","level":"info","message":"  POST /webhook/waha - WAHA webhook","context":"WEBHOOK"}
+{"timestamp":"2025-12-24T19:23:35.606Z","level":"info","message":"  GET  /health       - Health check","context":"WEBHOOK"}
+{"timestamp":"2025-12-24T19:23:35.606Z","level":"info","message":"  GET  /stats        - Statistics","context":"WEBHOOK"}
+{"timestamp":"2025-12-24T19:23:35.607Z","level":"info","message":"  POST /send         - Send message","context":"WEBHOOK"}
+{"timestamp":"2025-12-24T19:23:35.607Z","level":"info","message":"  GET  /conversations?phone=X - Get conversation","context":"WEBHOOK"}
+{"timestamp":"2025-12-24T19:23:35.607Z","level":"info","message":"Webhook server is ready to receive messages!"}
+{"timestamp":"2025-12-24T19:23:35.607Z","level":"info","message":"Configure WAHA to send webhooks to: POST /webhook/waha"}
+{"timestamp":"2025-12-24T19:23:43.509Z","level":"info","message":"WAHA webhook received","data":{"event":"message","from":"5519991547727@c.us"},"context":"WEBHOOK"}
+{"timestamp":"2025-12-24T19:23:43.511Z","level":"info","message":"Processing message","data":{"phone":"5519991547727","text":"Ola"},"context":"CONV"}
+{"timestamp":"2025-12-24T19:23:44.688Z","level":"info","message":"Completion successful","data":{"tokens":{"prompt":125,"completion":30,"total":155},"finishReason":"end_turn"},"context":"AI"}
+{"timestamp":"2025-12-24T19:23:44.702Z","level":"info","message":"Completion successful","data":{"tokens":{"prompt":122,"completion":34,"total":156},"finishReason":"end_turn"},"context":"AI"}
+{"timestamp":"2025-12-24T19:23:44.705Z","level":"info","message":"Sending message","data":{"chatId":"5519991547727@c.us","textLength":75},"context":"WAHA"}
+{"timestamp":"2025-12-24T19:23:45.253Z","level":"info","message":"WAHA webhook received","data":{"event":"message.ack","from":"5519999949516@c.us"},"context":"WEBHOOK"}
+{"timestamp":"2025-12-24T19:23:45.598Z","level":"info","message":"WAHA webhook received","data":{"event":"message.ack","from":"5519999949516@c.us"},"context":"WEBHOOK"}
+{"timestamp":"2025-12-24T19:23:45.819Z","level":"info","message":"WAHA webhook received","data":{"event":"message.ack","from":"5519999949516@c.us"},"context":"WEBHOOK"}
+{"timestamp":"2025-12-24T19:24:23.234Z","level":"info","message":"Received SIGINT, shutting down gracefully..."}
+{"timestamp":"2025-12-24T19:24:23.235Z","level":"info","message":"Webhook server stopped","context":"WEBHOOK"}
+{"timestamp":"2025-12-24T19:24:23.235Z","level":"info","message":"Supabase Service closed","context":"SUPABASE"}
+{"timestamp":"2025-12-24T19:26:12.022Z","level":"info","message":"AI Service initialized","data":{"provider":"anthropic","model":"claude-3-5-haiku-20241022"},"context":"AI"}
+{"timestamp":"2025-12-24T19:26:12.026Z","level":"info","message":"Supabase Service initialized","data":{"url":"https://llfwrwyqaswehksgvcyr.supabase.co"},"context":"SUPABASE"}
+{"timestamp":"2025-12-24T19:26:12.027Z","level":"info","message":"Response Agent initialized","data":{"tone":"professional","maxContext":10},"context":"AGENT"}
+{"timestamp":"2025-12-24T19:26:12.027Z","level":"info","message":"WAHA Service initialized","data":{"baseUrl":"http://localhost:3001","session":"default"},"context":"WAHA"}
+{"timestamp":"2025-12-24T19:26:12.028Z","level":"info","message":"Supabase Service ready","context":"SUPABASE"}
+{"timestamp":"2025-12-24T19:26:12.032Z","level":"info","message":"Webhook server running on http://0.0.0.0:3002","context":"WEBHOOK"}
+{"timestamp":"2025-12-24T19:26:12.032Z","level":"info","message":"Available endpoints:","context":"WEBHOOK"}
+{"timestamp":"2025-12-24T19:26:12.032Z","level":"info","message":"  POST /webhook/waha - WAHA webhook","context":"WEBHOOK"}
+{"timestamp":"2025-12-24T19:26:12.032Z","level":"info","message":"  GET  /health       - Health check","context":"WEBHOOK"}
+{"timestamp":"2025-12-24T19:26:12.036Z","level":"info","message":"  GET  /stats        - Statistics","context":"WEBHOOK"}
+{"timestamp":"2025-12-24T19:26:12.036Z","level":"info","message":"  POST /send         - Send message","context":"WEBHOOK"}
+{"timestamp":"2025-12-24T19:26:12.036Z","level":"info","message":"  GET  /conversations?phone=X - Get conversation","context":"WEBHOOK"}
+{"timestamp":"2025-12-24T19:26:12.036Z","level":"info","message":"Webhook server is ready to receive messages!"}
+{"timestamp":"2025-12-24T19:26:12.036Z","level":"info","message":"Configure WAHA to send webhooks to: POST /webhook/waha"}
+{"timestamp":"2025-12-24T19:26:18.861Z","level":"info","message":"WAHA webhook received","data":{"event":"message","from":"5519991547727@c.us"},"context":"WEBHOOK"}
+{"timestamp":"2025-12-24T19:26:18.864Z","level":"info","message":"Processing message","data":{"phone":"5519991547727","text":"Ola"},"context":"CONV"}
+{"timestamp":"2025-12-24T19:26:20.019Z","level":"info","message":"Completion successful","data":{"tokens":{"prompt":125,"completion":30,"total":155},"finishReason":"end_turn"},"context":"AI"}
+{"timestamp":"2025-12-24T19:26:20.857Z","level":"info","message":"Completion successful","data":{"tokens":{"prompt":122,"completion":32,"total":154},"finishReason":"end_turn"},"context":"AI"}
+{"timestamp":"2025-12-24T19:26:20.861Z","level":"info","message":"Sending message","data":{"chatId":"5519991547727@c.us","textLength":75},"context":"WAHA"}
+{"timestamp":"2025-12-24T19:26:21.401Z","level":"info","message":"WAHA webhook received","data":{"event":"message.ack","from":"5519999949516@c.us"},"context":"WEBHOOK"}
+{"timestamp":"2025-12-24T19:26:21.734Z","level":"info","message":"WAHA webhook received","data":{"event":"message.ack","from":"5519999949516@c.us"},"context":"WEBHOOK"}
+{"timestamp":"2025-12-24T19:26:21.928Z","level":"info","message":"WAHA webhook received","data":{"event":"message.ack","from":"5519999949516@c.us"},"context":"WEBHOOK"}
+{"timestamp":"2025-12-24T19:27:59.943Z","level":"info","message":"Received SIGINT, shutting down gracefully..."}
+{"timestamp":"2025-12-24T19:27:59.945Z","level":"info","message":"Webhook server stopped","context":"WEBHOOK"}
+{"timestamp":"2025-12-24T19:27:59.945Z","level":"info","message":"Supabase Service closed","context":"SUPABASE"}
+{"timestamp":"2025-12-24T19:28:05.147Z","level":"info","message":"AI Service initialized","data":{"provider":"anthropic","model":"claude-3-5-haiku-20241022"},"context":"AI"}
+{"timestamp":"2025-12-24T19:28:05.151Z","level":"info","message":"Supabase Service initialized","data":{"url":"https://llfwrwyqaswehksgvcyr.supabase.co"},"context":"SUPABASE"}
+{"timestamp":"2025-12-24T19:28:05.152Z","level":"info","message":"Response Agent initialized","data":{"tone":"professional","maxContext":10},"context":"AGENT"}
+{"timestamp":"2025-12-24T19:28:05.152Z","level":"info","message":"WAHA Service initialized","data":{"baseUrl":"http://localhost:3001","session":"default"},"context":"WAHA"}
+{"timestamp":"2025-12-24T19:28:05.153Z","level":"info","message":"Supabase Service ready","context":"SUPABASE"}
+{"timestamp":"2025-12-24T19:28:05.157Z","level":"info","message":"Webhook server running on http://0.0.0.0:3002","context":"WEBHOOK"}
+{"timestamp":"2025-12-24T19:28:05.157Z","level":"info","message":"Available endpoints:","context":"WEBHOOK"}
+{"timestamp":"2025-12-24T19:28:05.158Z","level":"info","message":"  POST /webhook/waha - WAHA webhook","context":"WEBHOOK"}
+{"timestamp":"2025-12-24T19:28:05.158Z","level":"info","message":"  GET  /health       - Health check","context":"WEBHOOK"}
+{"timestamp":"2025-12-24T19:28:05.158Z","level":"info","message":"  GET  /stats        - Statistics","context":"WEBHOOK"}
+{"timestamp":"2025-12-24T19:28:05.158Z","level":"info","message":"  POST /send         - Send message","context":"WEBHOOK"}
+{"timestamp":"2025-12-24T19:28:05.158Z","level":"info","message":"  GET  /conversations?phone=X - Get conversation","context":"WEBHOOK"}
+{"timestamp":"2025-12-24T19:28:05.158Z","level":"info","message":"Webhook server is ready to receive messages!"}
+{"timestamp":"2025-12-24T19:28:05.159Z","level":"info","message":"Configure WAHA to send webhooks to: POST /webhook/waha"}
+{"timestamp":"2025-12-24T19:28:13.492Z","level":"info","message":"WAHA webhook received","data":{"event":"message","from":"5519991547727@c.us"},"context":"WEBHOOK"}
+{"timestamp":"2025-12-24T19:28:13.494Z","level":"info","message":"Processing message","data":{"phone":"5519991547727","text":"Ola"},"context":"CONV"}
+{"timestamp":"2025-12-24T19:28:16.828Z","level":"info","message":"Completion successful","data":{"tokens":{"prompt":197,"completion":43,"total":240},"finishReason":"end_turn"},"context":"AI"}
+{"timestamp":"2025-12-24T19:28:17.302Z","level":"info","message":"Sending message","data":{"chatId":"5519991547727@c.us","textLength":118},"context":"WAHA"}
+{"timestamp":"2025-12-24T19:28:17.593Z","level":"info","message":"Response sent","data":{"phone":"5519991547727","shouldEscalate":false},"context":"CONV"}
+{"timestamp":"2025-12-24T19:28:17.840Z","level":"info","message":"WAHA webhook received","data":{"event":"message.ack","from":"5519999949516@c.us"},"context":"WEBHOOK"}
+{"timestamp":"2025-12-24T19:28:18.180Z","level":"info","message":"WAHA webhook received","data":{"event":"message.ack","from":"5519999949516@c.us"},"context":"WEBHOOK"}
+{"timestamp":"2025-12-24T19:28:18.384Z","level":"info","message":"WAHA webhook received","data":{"event":"message.ack","from":"5519999949516@c.us"},"context":"WEBHOOK"}
+{"timestamp":"2025-12-24T19:34:50.541Z","level":"info","message":"Received SIGINT, shutting down gracefully..."}
+{"timestamp":"2025-12-24T19:34:50.541Z","level":"info","message":"Webhook server stopped","context":"WEBHOOK"}
+{"timestamp":"2025-12-24T19:34:50.542Z","level":"info","message":"Supabase Service closed","context":"SUPABASE"}
+{"timestamp":"2025-12-24T19:35:02.246Z","level":"info","message":"AI Service initialized","data":{"provider":"anthropic","model":"claude-3-5-haiku-20241022"},"context":"AI"}
+{"timestamp":"2025-12-24T19:35:02.255Z","level":"info","message":"Supabase Service initialized","data":{"url":"https://llfwrwyqaswehksgvcyr.supabase.co"},"context":"SUPABASE"}
+{"timestamp":"2025-12-24T19:35:02.256Z","level":"info","message":"Response Agent initialized","data":{"tone":"professional","maxContext":10},"context":"AGENT"}
+{"timestamp":"2025-12-24T19:35:02.256Z","level":"info","message":"WAHA Service initialized","data":{"baseUrl":"http://localhost:3001","session":"default"},"context":"WAHA"}
+{"timestamp":"2025-12-24T19:35:02.258Z","level":"info","message":"Supabase Service ready","context":"SUPABASE"}
+{"timestamp":"2025-12-24T19:35:02.265Z","level":"info","message":"Webhook server running on http://0.0.0.0:3002","context":"WEBHOOK"}
+{"timestamp":"2025-12-24T19:35:02.266Z","level":"info","message":"Available endpoints:","context":"WEBHOOK"}
+{"timestamp":"2025-12-24T19:35:02.266Z","level":"info","message":"  POST /webhook/waha - WAHA webhook","context":"WEBHOOK"}
+{"timestamp":"2025-12-24T19:35:02.266Z","level":"info","message":"  GET  /health       - Health check","context":"WEBHOOK"}
+{"timestamp":"2025-12-24T19:35:02.267Z","level":"info","message":"  GET  /stats        - Statistics","context":"WEBHOOK"}
+{"timestamp":"2025-12-24T19:35:02.267Z","level":"info","message":"  POST /send         - Send message","context":"WEBHOOK"}
+{"timestamp":"2025-12-24T19:35:02.267Z","level":"info","message":"  GET  /conversations?phone=X - Get conversation","context":"WEBHOOK"}
+{"timestamp":"2025-12-24T19:35:02.267Z","level":"info","message":"Webhook server is ready to receive messages!"}
+{"timestamp":"2025-12-24T19:35:02.268Z","level":"info","message":"Configure WAHA to send webhooks to: POST /webhook/waha"}
+{"timestamp":"2025-12-24T19:36:12.836Z","level":"info","message":"WAHA webhook received","data":{"event":"message","from":"5519991547727@c.us"},"context":"WEBHOOK"}
+{"timestamp":"2025-12-24T19:36:12.841Z","level":"info","message":"Processing message","data":{"phone":"5519991547727","text":"Ola"},"context":"CONV"}
+{"timestamp":"2025-12-24T19:36:16.663Z","level":"info","message":"Completion successful","data":{"tokens":{"prompt":246,"completion":53,"total":299},"finishReason":"end_turn"},"context":"AI"}
+{"timestamp":"2025-12-24T19:36:17.102Z","level":"info","message":"Sending message","data":{"chatId":"5519991547727@c.us","textLength":144},"context":"WAHA"}
+{"timestamp":"2025-12-24T19:36:17.391Z","level":"info","message":"Response sent","data":{"phone":"5519991547727","shouldEscalate":false},"context":"CONV"}
+{"timestamp":"2025-12-24T19:36:17.631Z","level":"info","message":"WAHA webhook received","data":{"event":"message.ack","from":"5519999949516@c.us"},"context":"WEBHOOK"}
+{"timestamp":"2025-12-24T19:36:17.992Z","level":"info","message":"WAHA webhook received","data":{"event":"message.ack","from":"5519999949516@c.us"},"context":"WEBHOOK"}
+{"timestamp":"2025-12-24T19:36:18.186Z","level":"info","message":"WAHA webhook received","data":{"event":"message.ack","from":"5519999949516@c.us"},"context":"WEBHOOK"}
+{"timestamp":"2025-12-24T19:40:21.881Z","level":"info","message":"Received SIGTERM, shutting down gracefully..."}
+{"timestamp":"2025-12-24T19:40:21.885Z","level":"info","message":"Webhook server stopped","context":"WEBHOOK"}
+{"timestamp":"2025-12-24T19:40:21.885Z","level":"info","message":"Supabase Service closed","context":"SUPABASE"}
+{"timestamp":"2025-12-24T19:40:22.751Z","level":"info","message":"AI Service initialized","data":{"provider":"anthropic","model":"claude-3-5-haiku-20241022"},"context":"AI"}
+{"timestamp":"2025-12-24T19:40:22.757Z","level":"info","message":"Supabase Service initialized","data":{"url":"https://llfwrwyqaswehksgvcyr.supabase.co"},"context":"SUPABASE"}
+{"timestamp":"2025-12-24T19:40:22.758Z","level":"info","message":"Response Agent initialized","data":{"tone":"professional","maxContext":10},"context":"AGENT"}
+{"timestamp":"2025-12-24T19:40:22.758Z","level":"info","message":"WAHA Service initialized","data":{"baseUrl":"http://host.docker.internal:3001","session":"default"},"context":"WAHA"}
+{"timestamp":"2025-12-24T19:40:22.760Z","level":"info","message":"Supabase Service ready","context":"SUPABASE"}
+{"timestamp":"2025-12-24T19:40:22.770Z","level":"info","message":"Webhook server running on http://0.0.0.0:3002","context":"WEBHOOK"}
+{"timestamp":"2025-12-24T19:40:22.771Z","level":"info","message":"Available endpoints:","context":"WEBHOOK"}
+{"timestamp":"2025-12-24T19:40:22.771Z","level":"info","message":"  POST /webhook/waha - WAHA webhook","context":"WEBHOOK"}
+{"timestamp":"2025-12-24T19:40:22.771Z","level":"info","message":"  GET  /health       - Health check","context":"WEBHOOK"}
+{"timestamp":"2025-12-24T19:40:22.771Z","level":"info","message":"  GET  /stats        - Statistics","context":"WEBHOOK"}
+{"timestamp":"2025-12-24T19:40:22.771Z","level":"info","message":"  POST /send         - Send message","context":"WEBHOOK"}
+{"timestamp":"2025-12-24T19:40:22.771Z","level":"info","message":"  GET  /conversations?phone=X - Get conversation","context":"WEBHOOK"}
+{"timestamp":"2025-12-24T19:40:22.772Z","level":"info","message":"Webhook server is ready to receive messages!"}
+{"timestamp":"2025-12-24T19:40:22.772Z","level":"info","message":"Configure WAHA to send webhooks to: POST /webhook/waha"}
+{"timestamp":"2025-12-24T19:48:50.356Z","level":"info","message":"Received SIGTERM, shutting down gracefully..."}
+{"timestamp":"2025-12-24T19:48:50.357Z","level":"info","message":"Webhook server stopped","context":"WEBHOOK"}
+{"timestamp":"2025-12-24T19:48:50.357Z","level":"info","message":"Supabase Service closed","context":"SUPABASE"}
+{"timestamp":"2025-12-24T19:48:50.882Z","level":"info","message":"AI Service initialized","data":{"provider":"anthropic","model":"claude-3-5-haiku-20241022"},"context":"AI"}
+{"timestamp":"2025-12-24T19:48:50.885Z","level":"info","message":"Supabase Service initialized","data":{"url":"https://llfwrwyqaswehksgvcyr.supabase.co"},"context":"SUPABASE"}
+{"timestamp":"2025-12-24T19:48:50.885Z","level":"info","message":"Response Agent initialized","data":{"tone":"professional","maxContext":10},"context":"AGENT"}
+{"timestamp":"2025-12-24T19:48:50.886Z","level":"info","message":"WAHA Service initialized","data":{"baseUrl":"http://host.docker.internal:3001","session":"default"},"context":"WAHA"}
+{"timestamp":"2025-12-24T19:48:50.886Z","level":"info","message":"Supabase Service ready","context":"SUPABASE"}
+{"timestamp":"2025-12-24T19:48:50.892Z","level":"info","message":"Webhook server running on http://0.0.0.0:3002","context":"WEBHOOK"}
+{"timestamp":"2025-12-24T19:48:50.892Z","level":"info","message":"Available endpoints:","context":"WEBHOOK"}
+{"timestamp":"2025-12-24T19:48:50.892Z","level":"info","message":"  POST /webhook/waha - WAHA webhook","context":"WEBHOOK"}
+{"timestamp":"2025-12-24T19:48:50.892Z","level":"info","message":"  GET  /health       - Health check","context":"WEBHOOK"}
+{"timestamp":"2025-12-24T19:48:50.892Z","level":"info","message":"  GET  /stats        - Statistics","context":"WEBHOOK"}
+{"timestamp":"2025-12-24T19:48:50.892Z","level":"info","message":"  POST /send         - Send message","context":"WEBHOOK"}
+{"timestamp":"2025-12-24T19:48:50.893Z","level":"info","message":"  GET  /conversations?phone=X - Get conversation","context":"WEBHOOK"}
+{"timestamp":"2025-12-24T19:48:50.893Z","level":"info","message":"Webhook server is ready to receive messages!"}
+{"timestamp":"2025-12-24T19:48:50.893Z","level":"info","message":"Configure WAHA to send webhooks to: POST /webhook/waha"}
+{"timestamp":"2025-12-24T19:52:44.702Z","level":"info","message":"Received SIGTERM, shutting down gracefully..."}
+{"timestamp":"2025-12-24T19:52:44.705Z","level":"info","message":"Webhook server stopped","context":"WEBHOOK"}
+{"timestamp":"2025-12-24T19:52:44.705Z","level":"info","message":"Supabase Service closed","context":"SUPABASE"}
+{"timestamp":"2025-12-24T19:52:45.508Z","level":"info","message":"AI Service initialized","data":{"provider":"anthropic","model":"claude-3-5-haiku-20241022"},"context":"AI"}
+{"timestamp":"2025-12-24T19:52:45.513Z","level":"info","message":"Supabase Service initialized","data":{"url":"https://llfwrwyqaswehksgvcyr.supabase.co"},"context":"SUPABASE"}
+{"timestamp":"2025-12-24T19:52:45.513Z","level":"info","message":"Response Agent initialized","data":{"tone":"professional","maxContext":10},"context":"AGENT"}
+{"timestamp":"2025-12-24T19:52:45.513Z","level":"info","message":"WAHA Service initialized","data":{"baseUrl":"http://host.docker.internal:3001","session":"default"},"context":"WAHA"}
+{"timestamp":"2025-12-24T19:52:45.514Z","level":"info","message":"Supabase Service ready","context":"SUPABASE"}
+{"timestamp":"2025-12-24T19:52:45.520Z","level":"info","message":"Webhook server running on http://0.0.0.0:3002","context":"WEBHOOK"}
+{"timestamp":"2025-12-24T19:52:45.520Z","level":"info","message":"Available endpoints:","context":"WEBHOOK"}
+{"timestamp":"2025-12-24T19:52:45.521Z","level":"info","message":"  POST /webhook/waha - WAHA webhook","context":"WEBHOOK"}
+{"timestamp":"2025-12-24T19:52:45.521Z","level":"info","message":"  GET  /health       - Health check","context":"WEBHOOK"}
+{"timestamp":"2025-12-24T19:52:45.521Z","level":"info","message":"  GET  /stats        - Statistics","context":"WEBHOOK"}
+{"timestamp":"2025-12-24T19:52:45.521Z","level":"info","message":"  POST /send         - Send message","context":"WEBHOOK"}
+{"timestamp":"2025-12-24T19:52:45.522Z","level":"info","message":"  GET  /conversations?phone=X - Get conversation","context":"WEBHOOK"}
+{"timestamp":"2025-12-24T19:52:45.522Z","level":"info","message":"Webhook server is ready to receive messages!"}
+{"timestamp":"2025-12-24T19:52:45.522Z","level":"info","message":"Configure WAHA to send webhooks to: POST /webhook/waha"}
+{"timestamp":"2025-12-24T19:53:49.612Z","level":"info","message":"Received SIGTERM, shutting down gracefully..."}
+{"timestamp":"2025-12-24T19:53:49.614Z","level":"info","message":"Webhook server stopped","context":"WEBHOOK"}
+{"timestamp":"2025-12-24T19:53:49.614Z","level":"info","message":"Supabase Service closed","context":"SUPABASE"}
+{"timestamp":"2025-12-24T19:53:50.316Z","level":"info","message":"AI Service initialized","data":{"provider":"anthropic","model":"claude-3-5-haiku-20241022"},"context":"AI"}
+{"timestamp":"2025-12-24T19:53:50.321Z","level":"info","message":"Supabase Service initialized","data":{"url":"https://llfwrwyqaswehksgvcyr.supabase.co"},"context":"SUPABASE"}
+{"timestamp":"2025-12-24T19:53:50.321Z","level":"info","message":"Response Agent initialized","data":{"tone":"professional","maxContext":10},"context":"AGENT"}
+{"timestamp":"2025-12-24T19:53:50.322Z","level":"info","message":"WAHA Service initialized","data":{"baseUrl":"http://host.docker.internal:3001","session":"default"},"context":"WAHA"}
+{"timestamp":"2025-12-24T19:53:50.323Z","level":"info","message":"Supabase Service ready","context":"SUPABASE"}
+{"timestamp":"2025-12-24T19:53:50.330Z","level":"info","message":"Webhook server running on http://0.0.0.0:3002","context":"WEBHOOK"}
+{"timestamp":"2025-12-24T19:53:50.330Z","level":"info","message":"Available endpoints:","context":"WEBHOOK"}
+{"timestamp":"2025-12-24T19:53:50.331Z","level":"info","message":"  POST /webhook/waha - WAHA webhook","context":"WEBHOOK"}
+{"timestamp":"2025-12-24T19:53:50.331Z","level":"info","message":"  GET  /health       - Health check","context":"WEBHOOK"}
+{"timestamp":"2025-12-24T19:53:50.331Z","level":"info","message":"  GET  /stats        - Statistics","context":"WEBHOOK"}
+{"timestamp":"2025-12-24T19:53:50.331Z","level":"info","message":"  POST /send         - Send message","context":"WEBHOOK"}
+{"timestamp":"2025-12-24T19:53:50.331Z","level":"info","message":"  GET  /conversations?phone=X - Get conversation","context":"WEBHOOK"}
+{"timestamp":"2025-12-24T19:53:50.331Z","level":"info","message":"Webhook server is ready to receive messages!"}
+{"timestamp":"2025-12-24T19:53:50.332Z","level":"info","message":"Configure WAHA to send webhooks to: POST /webhook/waha"}
+{"timestamp":"2025-12-24T19:54:26.639Z","level":"info","message":"Received SIGTERM, shutting down gracefully..."}
+{"timestamp":"2025-12-24T19:54:26.640Z","level":"info","message":"Webhook server stopped","context":"WEBHOOK"}
+{"timestamp":"2025-12-24T19:54:26.641Z","level":"info","message":"Supabase Service closed","context":"SUPABASE"}
+{"timestamp":"2025-12-24T19:54:27.203Z","level":"info","message":"AI Service initialized","data":{"provider":"anthropic","model":"claude-3-5-haiku-20241022"},"context":"AI"}
+{"timestamp":"2025-12-24T19:54:27.207Z","level":"info","message":"Supabase Service initialized","data":{"url":"https://llfwrwyqaswehksgvcyr.supabase.co"},"context":"SUPABASE"}
+{"timestamp":"2025-12-24T19:54:27.208Z","level":"info","message":"Response Agent initialized","data":{"tone":"professional","maxContext":10},"context":"AGENT"}
+{"timestamp":"2025-12-24T19:54:27.208Z","level":"info","message":"WAHA Service initialized","data":{"baseUrl":"http://host.docker.internal:3001","session":"default"},"context":"WAHA"}
+{"timestamp":"2025-12-24T19:54:27.209Z","level":"info","message":"Supabase Service ready","context":"SUPABASE"}
+{"timestamp":"2025-12-24T19:54:27.216Z","level":"info","message":"Webhook server running on http://0.0.0.0:3002","context":"WEBHOOK"}
+{"timestamp":"2025-12-24T19:54:27.216Z","level":"info","message":"Available endpoints:","context":"WEBHOOK"}
+{"timestamp":"2025-12-24T19:54:27.216Z","level":"info","message":"  POST /webhook/waha - WAHA webhook","context":"WEBHOOK"}
+{"timestamp":"2025-12-24T19:54:27.216Z","level":"info","message":"  GET  /health       - Health check","context":"WEBHOOK"}
+{"timestamp":"2025-12-24T19:54:27.217Z","level":"info","message":"  GET  /stats        - Statistics","context":"WEBHOOK"}
+{"timestamp":"2025-12-24T19:54:27.217Z","level":"info","message":"  POST /send         - Send message","context":"WEBHOOK"}
+{"timestamp":"2025-12-24T19:54:27.217Z","level":"info","message":"  GET  /conversations?phone=X - Get conversation","context":"WEBHOOK"}
+{"timestamp":"2025-12-24T19:54:27.217Z","level":"info","message":"Webhook server is ready to receive messages!"}
+{"timestamp":"2025-12-24T19:54:27.218Z","level":"info","message":"Configure WAHA to send webhooks to: POST /webhook/waha"}
+{"timestamp":"2025-12-24T19:57:37.020Z","level":"info","message":"Received SIGTERM, shutting down gracefully..."}
+{"timestamp":"2025-12-24T19:57:37.021Z","level":"info","message":"Webhook server stopped","context":"WEBHOOK"}
+{"timestamp":"2025-12-24T19:57:37.022Z","level":"info","message":"Supabase Service closed","context":"SUPABASE"}
+{"timestamp":"2025-12-24T19:57:37.572Z","level":"info","message":"AI Service initialized","data":{"provider":"anthropic","model":"claude-3-5-haiku-20241022"},"context":"AI"}
+{"timestamp":"2025-12-24T19:57:37.576Z","level":"info","message":"Supabase Service initialized","data":{"url":"https://llfwrwyqaswehksgvcyr.supabase.co"},"context":"SUPABASE"}
+{"timestamp":"2025-12-24T19:57:37.576Z","level":"info","message":"Response Agent initialized","data":{"tone":"professional","maxContext":10},"context":"AGENT"}
+{"timestamp":"2025-12-24T19:57:37.576Z","level":"info","message":"WAHA Service initialized","data":{"baseUrl":"http://host.docker.internal:3001","session":"default"},"context":"WAHA"}
+{"timestamp":"2025-12-24T19:57:37.578Z","level":"info","message":"Supabase Service ready","context":"SUPABASE"}
+{"timestamp":"2025-12-24T19:57:37.583Z","level":"info","message":"Webhook server running on http://0.0.0.0:3002","context":"WEBHOOK"}
+{"timestamp":"2025-12-24T19:57:37.583Z","level":"info","message":"Available endpoints:","context":"WEBHOOK"}
+{"timestamp":"2025-12-24T19:57:37.583Z","level":"info","message":"  POST /webhook/waha - WAHA webhook","context":"WEBHOOK"}
+{"timestamp":"2025-12-24T19:57:37.584Z","level":"info","message":"  GET  /health       - Health check","context":"WEBHOOK"}
+{"timestamp":"2025-12-24T19:57:37.584Z","level":"info","message":"  GET  /stats        - Statistics","context":"WEBHOOK"}
+{"timestamp":"2025-12-24T19:57:37.584Z","level":"info","message":"  POST /send         - Send message","context":"WEBHOOK"}
+{"timestamp":"2025-12-24T19:57:37.584Z","level":"info","message":"  GET  /conversations?phone=X - Get conversation","context":"WEBHOOK"}
+{"timestamp":"2025-12-24T19:57:37.584Z","level":"info","message":"Webhook server is ready to receive messages!"}
+{"timestamp":"2025-12-24T19:57:37.584Z","level":"info","message":"Configure WAHA to send webhooks to: POST /webhook/waha"}
+{"timestamp":"2025-12-24T19:59:49.040Z","level":"info","message":"Received SIGTERM, shutting down gracefully..."}
+{"timestamp":"2025-12-24T19:59:49.044Z","level":"info","message":"Webhook server stopped","context":"WEBHOOK"}
+{"timestamp":"2025-12-24T19:59:49.044Z","level":"info","message":"Supabase Service closed","context":"SUPABASE"}
+{"timestamp":"2025-12-24T19:59:49.816Z","level":"info","message":"AI Service initialized","data":{"provider":"anthropic","model":"claude-3-5-haiku-20241022"},"context":"AI"}
+{"timestamp":"2025-12-24T19:59:49.822Z","level":"info","message":"Supabase Service initialized","data":{"url":"https://llfwrwyqaswehksgvcyr.supabase.co"},"context":"SUPABASE"}
+{"timestamp":"2025-12-24T19:59:49.822Z","level":"info","message":"Response Agent initialized","data":{"tone":"professional","maxContext":10},"context":"AGENT"}
+{"timestamp":"2025-12-24T19:59:49.823Z","level":"info","message":"WAHA Service initialized","data":{"baseUrl":"http://host.docker.internal:3001","session":"default"},"context":"WAHA"}
+{"timestamp":"2025-12-24T19:59:49.824Z","level":"info","message":"Supabase Service ready","context":"SUPABASE"}
+{"timestamp":"2025-12-24T19:59:49.830Z","level":"info","message":"Webhook server running on http://0.0.0.0:3002","context":"WEBHOOK"}
+{"timestamp":"2025-12-24T19:59:49.831Z","level":"info","message":"Available endpoints:","context":"WEBHOOK"}
+{"timestamp":"2025-12-24T19:59:49.831Z","level":"info","message":"  POST /webhook/waha - WAHA webhook","context":"WEBHOOK"}
+{"timestamp":"2025-12-24T19:59:49.831Z","level":"info","message":"  GET  /health       - Health check","context":"WEBHOOK"}
+{"timestamp":"2025-12-24T19:59:49.831Z","level":"info","message":"  GET  /stats        - Statistics","context":"WEBHOOK"}
+{"timestamp":"2025-12-24T19:59:49.831Z","level":"info","message":"  POST /send         - Send message","context":"WEBHOOK"}
+{"timestamp":"2025-12-24T19:59:49.832Z","level":"info","message":"  GET  /conversations?phone=X - Get conversation","context":"WEBHOOK"}
+{"timestamp":"2025-12-24T19:59:49.832Z","level":"info","message":"Webhook server is ready to receive messages!"}
+{"timestamp":"2025-12-24T19:59:49.832Z","level":"info","message":"Configure WAHA to send webhooks to: POST /webhook/waha"}
+{"timestamp":"2025-12-24T20:02:48.499Z","level":"info","message":"Received SIGTERM, shutting down gracefully..."}
+{"timestamp":"2025-12-24T20:02:48.502Z","level":"info","message":"Webhook server stopped","context":"WEBHOOK"}
+{"timestamp":"2025-12-24T20:02:48.502Z","level":"info","message":"Supabase Service closed","context":"SUPABASE"}
+{"timestamp":"2025-12-24T20:02:49.494Z","level":"info","message":"AI Service initialized","data":{"provider":"anthropic","model":"claude-3-5-haiku-20241022"},"context":"AI"}
+{"timestamp":"2025-12-24T20:02:49.500Z","level":"info","message":"Supabase Service initialized","data":{"url":"https://llfwrwyqaswehksgvcyr.supabase.co"},"context":"SUPABASE"}
+{"timestamp":"2025-12-24T20:02:49.500Z","level":"info","message":"Response Agent initialized","data":{"tone":"professional","maxContext":10},"context":"AGENT"}
+{"timestamp":"2025-12-24T20:02:49.500Z","level":"info","message":"WAHA Service initialized","data":{"baseUrl":"http://host.docker.internal:3001","session":"default"},"context":"WAHA"}
+{"timestamp":"2025-12-24T20:02:49.501Z","level":"info","message":"Supabase Service ready","context":"SUPABASE"}
+{"timestamp":"2025-12-24T20:02:49.519Z","level":"info","message":"Webhook server running on http://0.0.0.0:3002","context":"WEBHOOK"}
+{"timestamp":"2025-12-24T20:02:49.520Z","level":"info","message":"Available endpoints:","context":"WEBHOOK"}
+{"timestamp":"2025-12-24T20:02:49.520Z","level":"info","message":"  POST /webhook/waha - WAHA webhook","context":"WEBHOOK"}
+{"timestamp":"2025-12-24T20:02:49.520Z","level":"info","message":"  GET  /health       - Health check","context":"WEBHOOK"}
+{"timestamp":"2025-12-24T20:02:49.520Z","level":"info","message":"  GET  /stats        - Statistics","context":"WEBHOOK"}
+{"timestamp":"2025-12-24T20:02:49.520Z","level":"info","message":"  POST /send         - Send message","context":"WEBHOOK"}
+{"timestamp":"2025-12-24T20:02:49.521Z","level":"info","message":"  GET  /conversations?phone=X - Get conversation","context":"WEBHOOK"}
+{"timestamp":"2025-12-24T20:02:49.521Z","level":"info","message":"Webhook server is ready to receive messages!"}
+{"timestamp":"2025-12-24T20:02:49.521Z","level":"info","message":"Configure WAHA to send webhooks to: POST /webhook/waha"}
+{"timestamp":"2025-12-24T20:08:14.642Z","level":"info","message":"Received SIGTERM, shutting down gracefully..."}
+{"timestamp":"2025-12-24T20:08:14.645Z","level":"info","message":"Webhook server stopped","context":"WEBHOOK"}
+{"timestamp":"2025-12-24T20:08:14.645Z","level":"info","message":"Supabase Service closed","context":"SUPABASE"}
+{"timestamp":"2025-12-24T20:08:15.267Z","level":"info","message":"AI Service initialized","data":{"provider":"anthropic","model":"claude-3-5-haiku-20241022"},"context":"AI"}
+{"timestamp":"2025-12-24T20:08:15.271Z","level":"info","message":"Supabase Service initialized","data":{"url":"https://llfwrwyqaswehksgvcyr.supabase.co"},"context":"SUPABASE"}
+{"timestamp":"2025-12-24T20:08:15.272Z","level":"info","message":"Response Agent initialized","data":{"tone":"professional","maxContext":10},"context":"AGENT"}
+{"timestamp":"2025-12-24T20:08:15.272Z","level":"info","message":"WAHA Service initialized","data":{"baseUrl":"http://host.docker.internal:3001","session":"default"},"context":"WAHA"}
+{"timestamp":"2025-12-24T20:08:15.273Z","level":"info","message":"Supabase Service ready","context":"SUPABASE"}
+{"timestamp":"2025-12-24T20:08:15.279Z","level":"info","message":"Webhook server running on http://0.0.0.0:3002","context":"WEBHOOK"}
+{"timestamp":"2025-12-24T20:08:15.280Z","level":"info","message":"Available endpoints:","context":"WEBHOOK"}
+{"timestamp":"2025-12-24T20:08:15.280Z","level":"info","message":"  POST /webhook/waha - WAHA webhook","context":"WEBHOOK"}
+{"timestamp":"2025-12-24T20:08:15.280Z","level":"info","message":"  GET  /health       - Health check","context":"WEBHOOK"}
+{"timestamp":"2025-12-24T20:08:15.280Z","level":"info","message":"  GET  /stats        - Statistics","context":"WEBHOOK"}
+{"timestamp":"2025-12-24T20:08:15.280Z","level":"info","message":"  POST /send         - Send message","context":"WEBHOOK"}
+{"timestamp":"2025-12-24T20:08:15.281Z","level":"info","message":"  GET  /conversations?phone=X - Get conversation","context":"WEBHOOK"}
+{"timestamp":"2025-12-24T20:08:15.281Z","level":"info","message":"Webhook server is ready to receive messages!"}
+{"timestamp":"2025-12-24T20:08:15.281Z","level":"info","message":"Configure WAHA to send webhooks to: POST /webhook/waha"}
+{"timestamp":"2025-12-24T20:34:35.540Z","level":"info","message":"WAHA webhook received","data":{"event":"session.status"},"context":"WEBHOOK"}
+{"timestamp":"2025-12-24T20:34:44.731Z","level":"info","message":"WAHA webhook received","data":{"event":"session.status"},"context":"WEBHOOK"}
+{"timestamp":"2025-12-24T20:34:57.317Z","level":"info","message":"WAHA webhook received","data":{"event":"message","from":"5519991547727@c.us"},"context":"WEBHOOK"}
+{"timestamp":"2025-12-24T20:34:57.318Z","level":"info","message":"Processing message","data":{"phone":"5519991547727","text":"ola"},"context":"CONV"}
+{"timestamp":"2025-12-24T20:35:02.489Z","level":"info","message":"Completion successful","data":{"tokens":{"prompt":303,"completion":80,"total":383},"finishReason":"end_turn"},"context":"AI"}
+{"timestamp":"2025-12-24T20:35:02.931Z","level":"info","message":"Sending message","data":{"chatId":"5519991547727@c.us","textLength":218},"context":"WAHA"}
+{"timestamp":"2025-12-24T20:35:03.251Z","level":"info","message":"Response sent","data":{"phone":"5519991547727","shouldEscalate":false},"context":"CONV"}
+{"timestamp":"2025-12-24T20:35:03.544Z","level":"info","message":"WAHA webhook received","data":{"event":"message.ack","from":"5519999949516@c.us"},"context":"WEBHOOK"}
+{"timestamp":"2025-12-24T20:35:03.867Z","level":"info","message":"WAHA webhook received","data":{"event":"message.ack","from":"5519999949516@c.us"},"context":"WEBHOOK"}
+{"timestamp":"2025-12-24T20:35:04.082Z","level":"info","message":"WAHA webhook received","data":{"event":"message.ack","from":"5519999949516@c.us"},"context":"WEBHOOK"}
+{"timestamp":"2025-12-24T21:28:04.783Z","level":"info","message":"Received SIGTERM, shutting down gracefully..."}
+{"timestamp":"2025-12-24T21:28:04.831Z","level":"info","message":"Webhook server stopped","context":"WEBHOOK"}
+{"timestamp":"2025-12-24T21:28:04.831Z","level":"info","message":"Supabase Service closed","context":"SUPABASE"}
+{"timestamp":"2025-12-24T21:28:07.059Z","level":"info","message":"AI Service initialized","data":{"provider":"anthropic","model":"claude-sonnet-4-20250514"},"context":"AI"}
+{"timestamp":"2025-12-24T21:28:07.083Z","level":"info","message":"Supabase Service initialized","data":{"url":"https://llfwrwyqaswehksgvcyr.supabase.co"},"context":"SUPABASE"}
+{"timestamp":"2025-12-24T21:28:07.083Z","level":"info","message":"Response Agent initialized","data":{"tone":"professional","maxContext":10},"context":"AGENT"}
+{"timestamp":"2025-12-24T21:28:07.084Z","level":"info","message":"WAHA Service initialized","data":{"baseUrl":"http://host.docker.internal:3001","session":"default"},"context":"WAHA"}
+{"timestamp":"2025-12-24T21:28:07.086Z","level":"info","message":"Supabase Service ready","context":"SUPABASE"}
+{"timestamp":"2025-12-24T21:28:07.096Z","level":"info","message":"Webhook server running on http://0.0.0.0:3002","context":"WEBHOOK"}
+{"timestamp":"2025-12-24T21:28:07.097Z","level":"info","message":"Available endpoints:","context":"WEBHOOK"}
+{"timestamp":"2025-12-24T21:28:07.097Z","level":"info","message":"  POST /webhook/waha - WAHA webhook","context":"WEBHOOK"}
+{"timestamp":"2025-12-24T21:28:07.097Z","level":"info","message":"  GET  /health       - Health check","context":"WEBHOOK"}
+{"timestamp":"2025-12-24T21:28:07.097Z","level":"info","message":"  GET  /stats        - Statistics","context":"WEBHOOK"}
+{"timestamp":"2025-12-24T21:28:07.097Z","level":"info","message":"  POST /send         - Send message","context":"WEBHOOK"}
+{"timestamp":"2025-12-24T21:28:07.098Z","level":"info","message":"  GET  /conversations?phone=X - Get conversation","context":"WEBHOOK"}
+{"timestamp":"2025-12-24T21:28:07.098Z","level":"info","message":"Webhook server is ready to receive messages!"}
+{"timestamp":"2025-12-24T21:28:07.098Z","level":"info","message":"Configure WAHA to send webhooks to: POST /webhook/waha"}
+{"timestamp":"2025-12-24T21:53:16.655Z","level":"info","message":"Received SIGTERM, shutting down gracefully..."}
+{"timestamp":"2025-12-24T21:53:16.658Z","level":"info","message":"Webhook server stopped","context":"WEBHOOK"}
+{"timestamp":"2025-12-24T21:53:16.659Z","level":"info","message":"Supabase Service closed","context":"SUPABASE"}
+{"timestamp":"2025-12-24T21:53:17.343Z","level":"info","message":"AI Service initialized","data":{"provider":"anthropic","model":"claude-sonnet-4-20250514"},"context":"AI"}
+{"timestamp":"2025-12-24T21:53:17.347Z","level":"info","message":"Supabase Service initialized","data":{"url":"https://llfwrwyqaswehksgvcyr.supabase.co"},"context":"SUPABASE"}
+{"timestamp":"2025-12-24T21:53:17.348Z","level":"info","message":"Response Agent initialized","data":{"tone":"professional","maxContext":10},"context":"AGENT"}
+{"timestamp":"2025-12-24T21:53:17.348Z","level":"info","message":"WAHA Service initialized","data":{"baseUrl":"http://host.docker.internal:3001","session":"default"},"context":"WAHA"}
+{"timestamp":"2025-12-24T21:53:17.349Z","level":"info","message":"Supabase Service ready","context":"SUPABASE"}
+{"timestamp":"2025-12-24T21:53:17.355Z","level":"info","message":"Webhook server running on http://0.0.0.0:3002","context":"WEBHOOK"}
+{"timestamp":"2025-12-24T21:53:17.355Z","level":"info","message":"Available endpoints:","context":"WEBHOOK"}
+{"timestamp":"2025-12-24T21:53:17.355Z","level":"info","message":"  POST /webhook/waha - WAHA webhook","context":"WEBHOOK"}
+{"timestamp":"2025-12-24T21:53:17.355Z","level":"info","message":"  GET  /health       - Health check","context":"WEBHOOK"}
+{"timestamp":"2025-12-24T21:53:17.356Z","level":"info","message":"  GET  /stats        - Statistics","context":"WEBHOOK"}
+{"timestamp":"2025-12-24T21:53:17.356Z","level":"info","message":"  POST /send         - Send message","context":"WEBHOOK"}
+{"timestamp":"2025-12-24T21:53:17.356Z","level":"info","message":"  GET  /conversations?phone=X - Get conversation","context":"WEBHOOK"}
+{"timestamp":"2025-12-24T21:53:17.356Z","level":"info","message":"Webhook server is ready to receive messages!"}
+{"timestamp":"2025-12-24T21:53:17.356Z","level":"info","message":"Configure WAHA to send webhooks to: POST /webhook/waha"}
