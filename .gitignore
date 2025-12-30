@@ -1,4 +1,5 @@
-.envgoogle-credentials.json
+.env
+google-credentials.json
 google-token.json
 *.zip
 node_modules/
