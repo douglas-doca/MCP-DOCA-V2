@@ -1,0 +1,605 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>DOCA IA • Chat</title>
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+
+  <style>
+    :root{
+      --wa-green: #075E54;
+      --wa-green-2:#128C7E;
+      --wa-bg:#E5DDD5;
+      --wa-bubble-in:#FFFFFF;
+      --wa-bubble-out:#DCF8C6;
+      --wa-text:#111827;
+      --wa-muted:#6B7280;
+      --wa-shadow: 0 12px 35px rgba(0,0,0,0.20);
+      --radius: 18px;
+      --radius-sm: 14px;
+    }
+
+    *{ box-sizing:border-box; }
+    html, body { height:100%; }
+    body{
+      margin:0;
+      font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+      background: var(--wa-bg);
+      color: var(--wa-text);
+      overflow:hidden;
+    }
+
+    .app{
+      height:100%;
+      display:flex;
+      flex-direction:column;
+    }
+
+    .topbar{
+      height: 64px;
+      background: linear-gradient(180deg, var(--wa-green), #064F47);
+      color:white;
+      display:flex;
+      align-items:center;
+      padding: 10px 12px;
+      gap: 10px;
+      box-shadow: 0 6px 18px rgba(0,0,0,0.18);
+      flex: 0 0 auto;
+    }
+
+    .back{
+      width: 36px;
+      height: 36px;
+      border-radius: 999px;
+      display:grid;
+      place-items:center;
+      cursor:pointer;
+      user-select:none;
+      transition: transform .15s ease, background .15s ease;
+    }
+    .back:hover{ background: rgba(255,255,255,0.12); transform: translateX(-1px); }
+
+    .avatar{
+      width: 40px;
+      height: 40px;
+      border-radius: 999px;
+      background: radial-gradient(circle at 30% 25%, rgba(255,255,255,0.35), rgba(255,255,255,0) 55%),
+                  linear-gradient(135deg, #F57F17, #E65100);
+      display:grid;
+      place-items:center;
+      font-weight: 900;
+      font-size: 16px;
+      box-shadow: 0 10px 26px rgba(0,0,0,0.22);
+      flex: 0 0 auto;
+    }
+
+    .title{
+      min-width:0;
+      flex:1;
+      display:flex;
+      flex-direction:column;
+      line-height:1.05;
+    }
+    .title .name{
+      font-weight: 800;
+      font-size: 14px;
+      white-space:nowrap;
+      overflow:hidden;
+      text-overflow:ellipsis;
+    }
+    .title .status{
+      font-size: 12px;
+      opacity: .85;
+      display:flex;
+      align-items:center;
+      gap: 6px;
+      margin-top: 2px;
+    }
+    .dot{
+      width: 7px;
+      height: 7px;
+      border-radius: 999px;
+      background: #34D399;
+      box-shadow: 0 0 0 0 rgba(52,211,153,0.55);
+      animation: pulse 2.4s ease-in-out infinite;
+    }
+    @keyframes pulse{
+      0%,100%{ transform: scale(1); opacity: .8; }
+      50%{ transform: scale(1.35); opacity: 1; }
+    }
+
+    .actions{
+      display:flex;
+      gap: 10px;
+      align-items:center;
+      opacity: .95;
+    }
+    .icon{
+      width: 34px;
+      height: 34px;
+      border-radius: 999px;
+      display:grid;
+      place-items:center;
+      cursor:pointer;
+      user-select:none;
+      transition: background .15s ease;
+    }
+    .icon:hover{ background: rgba(255,255,255,0.12); }
+
+    /* ===== Toggle ===== */
+    .toggle{
+      display:flex;
+      align-items:center;
+      gap: 8px;
+      margin-right: 6px;
+      padding: 6px 10px;
+      border-radius: 999px;
+      background: rgba(255,255,255,0.12);
+      border: 1px solid rgba(255,255,255,0.14);
+      font-size: 12px;
+      font-weight: 700;
+      user-select:none;
+      cursor:pointer;
+      white-space:nowrap;
+    }
+    .toggle input{ accent-color: #F57F17; }
+    .toggle span{ opacity: .95; }
+
+    /* ===== Messages area ===== */
+    .chat{
+      flex: 1 1 auto;
+      overflow:auto;
+      padding: 14px 12px 10px;
+      scroll-behavior:smooth;
+      background:
+        radial-gradient(circle at 14% 18%, rgba(255,255,255,0.28), transparent 45%),
+        radial-gradient(circle at 86% 22%, rgba(255,255,255,0.14), transparent 40%),
+        radial-gradient(circle at 20% 80%, rgba(0,0,0,0.05), transparent 40%),
+        linear-gradient(180deg, rgba(255,255,255,0.10), rgba(255,255,255,0.05)),
+        var(--wa-bg);
+    }
+
+    .chat::-webkit-scrollbar{ width: 6px; }
+    .chat::-webkit-scrollbar-thumb{ background: rgba(0,0,0,0.12); border-radius: 999px; }
+
+    .day-pill{
+      margin: 8px auto 14px;
+      display:inline-flex;
+      align-items:center;
+      gap: 8px;
+      padding: 6px 12px;
+      border-radius: 999px;
+      background: rgba(255,255,255,0.55);
+      border: 1px solid rgba(0,0,0,0.06);
+      color: rgba(17,24,39,0.75);
+      font-size: 12px;
+      font-weight: 700;
+      box-shadow: 0 10px 22px rgba(0,0,0,0.08);
+    }
+
+    .bubble{
+      max-width: 86%;
+      padding: 10px 12px;
+      border-radius: var(--radius);
+      position: relative;
+      box-shadow: 0 10px 20px rgba(0,0,0,0.06);
+      margin: 6px 0;
+      font-size: 14px;
+      line-height: 1.45;
+      word-wrap: break-word;
+      white-space: pre-wrap;
+    }
+
+    .in{
+      background: var(--wa-bubble-in);
+      border-top-left-radius: 6px;
+      margin-right:auto;
+    }
+
+    .out{
+      background: var(--wa-bubble-out);
+      border-top-right-radius: 6px;
+      margin-left:auto;
+    }
+
+    .meta{
+      display:flex;
+      gap: 6px;
+      align-items:center;
+      justify-content:flex-end;
+      margin-top: 6px;
+      font-size: 11px;
+      color: rgba(17,24,39,0.55);
+      user-select:none;
+    }
+
+    .ticks{
+      font-size: 12px;
+      opacity: .8;
+    }
+
+    .typing{
+      display:inline-flex;
+      gap: 6px;
+      align-items:center;
+      padding: 8px 12px;
+      border-radius: 999px;
+      background: rgba(255,255,255,0.6);
+      border: 1px solid rgba(0,0,0,0.06);
+      color: rgba(17,24,39,0.6);
+      font-weight: 700;
+      font-size: 12px;
+      margin: 10px 0 2px;
+      width: fit-content;
+    }
+    .dots{
+      display:inline-flex;
+      gap: 4px;
+      align-items:center;
+    }
+    .dots span{
+      width: 6px;
+      height: 6px;
+      border-radius: 999px;
+      background: rgba(17,24,39,0.35);
+      animation: b 1.2s infinite ease-in-out;
+    }
+    .dots span:nth-child(2){ animation-delay: .15s; }
+    .dots span:nth-child(3){ animation-delay: .30s; }
+    @keyframes b{
+      0%,100%{ transform: translateY(0); opacity: .5; }
+      50%{ transform: translateY(-4px); opacity: 1; }
+    }
+
+    /* ===== Input area ===== */
+    .composer{
+      flex: 0 0 auto;
+      padding: 10px 10px 12px;
+      background: rgba(255,255,255,0.70);
+      backdrop-filter: blur(10px);
+      border-top: 1px solid rgba(0,0,0,0.06);
+      display:flex;
+      gap: 10px;
+      align-items:flex-end;
+    }
+
+    .pill{
+      width: 40px;
+      height: 40px;
+      border-radius: 999px;
+      display:grid;
+      place-items:center;
+      background: rgba(255,255,255,0.85);
+      border: 1px solid rgba(0,0,0,0.08);
+      cursor:pointer;
+      user-select:none;
+      transition: transform .12s ease;
+      box-shadow: 0 10px 24px rgba(0,0,0,0.10);
+    }
+    .pill:active{ transform: scale(0.98); }
+
+    .inputwrap{
+      flex:1;
+      display:flex;
+      align-items:flex-end;
+      background: rgba(255,255,255,0.92);
+      border: 1px solid rgba(0,0,0,0.10);
+      border-radius: 999px;
+      padding: 8px 12px;
+      gap: 10px;
+      box-shadow: 0 10px 24px rgba(0,0,0,0.08);
+    }
+
+    textarea{
+      width:100%;
+      resize:none;
+      border:none;
+      outline:none;
+      background: transparent;
+      font-family: inherit;
+      font-size: 14px;
+      line-height: 1.4;
+      max-height: 130px;
+      padding: 6px 0;
+      color: var(--wa-text);
+    }
+
+    .send{
+      width: 46px;
+      height: 46px;
+      border-radius: 999px;
+      border:none;
+      cursor:pointer;
+      background: linear-gradient(135deg, var(--wa-green-2), var(--wa-green));
+      color:white;
+      font-weight: 900;
+      box-shadow: 0 14px 30px rgba(7,94,84,0.28);
+      transition: transform .12s ease, filter .12s ease;
+      display:grid;
+      place-items:center;
+      user-select:none;
+    }
+    .send:active{ transform: scale(0.98); }
+    .send[disabled]{ opacity: .55; cursor:not-allowed; }
+
+    @supports(padding: max(0px)){
+      .composer{ padding-bottom: max(12px, env(safe-area-inset-bottom)); }
+    }
+  </style>
+</head>
+<body>
+
+  <div class="app">
+    <!-- Top Bar -->
+    <header class="topbar">
+      <div class="back" title="Voltar">←</div>
+      <div class="avatar">🐙</div>
+
+      <div class="title">
+        <div class="name">DOCA IA</div>
+        <div class="status">
+          <span class="dot"></span>
+          <span>online</span>
+        </div>
+      </div>
+
+      <div class="actions">
+        <!-- ✅ Toggle: modo real -->
+        <label class="toggle" title="Modo Real = simula digitação e bolhas">
+          <input type="checkbox" id="realMode" checked />
+          <span>Modo Real</span>
+        </label>
+
+        <div class="icon" title="Chamada">📞</div>
+        <div class="icon" title="Menu">⋮</div>
+      </div>
+    </header>
+
+    <!-- Chat -->
+    <main class="chat" id="chat">
+      <div class="day-pill">🔒 Mensagens criptografadas (demo)</div>
+      <!-- mensagens serão inseridas aqui -->
+    </main>
+
+    <!-- Composer -->
+    <footer class="composer">
+      <div class="pill" title="Emoji">😊</div>
+
+      <div class="inputwrap">
+        <textarea
+          id="input"
+          rows="1"
+          placeholder="Mensagem"
+        ></textarea>
+      </div>
+
+      <button class="send" id="send" title="Enviar">
+        ➤
+      </button>
+    </footer>
+  </div>
+
+  <script>
+    // ===============================
+    // Config
+    // ===============================
+    const API_URL = "/api/chat";
+
+    const sessionId = (() => {
+      const key = "doca_chat_session_id";
+      const existing = localStorage.getItem(key);
+      if (existing) return existing;
+      const id = "sess_" + Math.random().toString(36).slice(2) + Date.now().toString(36);
+      localStorage.setItem(key, id);
+      return id;
+    })();
+
+    const chat = document.getElementById("chat");
+    const input = document.getElementById("input");
+    const sendBtn = document.getElementById("send");
+    const realModeToggle = document.getElementById("realMode");
+
+    let isPlayingPlan = false;
+    let typingEl = null;
+
+    function nowTime() {
+      const d = new Date();
+      const hh = String(d.getHours()).padStart(2, "0");
+      const mm = String(d.getMinutes()).padStart(2, "0");
+      return `${hh}:${mm}`;
+    }
+
+    function scrollToBottom() {
+      chat.scrollTop = chat.scrollHeight;
+    }
+
+    function sleep(ms) {
+      return new Promise((resolve) => setTimeout(resolve, ms || 0));
+    }
+
+    function addBubble(text, side) {
+      const wrap = document.createElement("div");
+      wrap.className = "bubble " + (side === "out" ? "out" : "in");
+      wrap.textContent = text;
+
+      const meta = document.createElement("div");
+      meta.className = "meta";
+      meta.innerHTML = `<span>${nowTime()}</span>${side === "out" ? `<span class="ticks">✓✓</span>` : ""}`;
+
+      wrap.appendChild(meta);
+      chat.appendChild(wrap);
+      scrollToBottom();
+      return wrap;
+    }
+
+    function showTyping() {
+      if (typingEl) return typingEl;
+      const t = document.createElement("div");
+      t.className = "typing";
+      t.innerHTML = `<span>Digitando</span> <span class="dots"><span></span><span></span><span></span></span>`;
+      chat.appendChild(t);
+      typingEl = t;
+      scrollToBottom();
+      return t;
+    }
+
+    function hideTyping() {
+      if (!typingEl) return;
+      typingEl.remove();
+      typingEl = null;
+    }
+
+    function setSending(isSending) {
+      sendBtn.disabled = isSending;
+      input.disabled = isSending;
+    }
+
+    function autosize() {
+      input.style.height = "auto";
+      input.style.height = Math.min(input.scrollHeight, 130) + "px";
+    }
+    input.addEventListener("input", autosize);
+
+    function normalizePlan(data) {
+      // Back compat:
+      // - data.plan.items
+      // - data.responsePlan.items
+      // - data.bubbles
+      const plan = data?.plan || data?.responsePlan || null;
+      const items = plan?.items || null;
+
+      const bubbles =
+        data?.bubbles ||
+        plan?.bubbles ||
+        (data?.reply ? [data.reply] : null);
+
+      return { plan, items, bubbles };
+    }
+
+    async function playResponsePlan(items, fallbackText) {
+      // se já tá tocando, não toca de novo
+      if (isPlayingPlan) return;
+      isPlayingPlan = true;
+
+      try {
+        if (!Array.isArray(items) || items.length === 0) {
+          hideTyping();
+          addBubble(fallbackText || "Recebi! 😊", "in");
+          return;
+        }
+
+        for (const item of items) {
+          if (!item || typeof item !== "object") continue;
+
+          // delay antes do item, se houver
+          if (item.delayMs && item.delayMs > 0) {
+            await sleep(item.delayMs);
+          }
+
+          if (item.type === "typing") {
+            if (item.action === "start") showTyping();
+            if (item.action === "stop") hideTyping();
+            continue;
+          }
+
+          if (item.type === "text") {
+            hideTyping(); // se o backend não mandou stop, garante
+            const txt = String(item.text || "").trim();
+            if (txt) addBubble(txt, "in");
+          }
+        }
+
+        hideTyping();
+      } finally {
+        isPlayingPlan = false;
+      }
+    }
+
+    async function sendMessage() {
+      const text = (input.value || "").trim();
+      if (!text) return;
+
+      addBubble(text, "out");
+      input.value = "";
+      autosize();
+
+      setSending(true);
+
+      try {
+        const res = await fetch(API_URL, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            session_id: sessionId,
+            message: text,
+            channel: "landing_chat",
+            ui_mode: realModeToggle.checked ? "real" : "instant"
+          }),
+        });
+
+        if (!res.ok) throw new Error("HTTP " + res.status);
+
+        const data = await res.json();
+
+        const reply =
+          data.reply ||
+          data.text ||
+          data.message ||
+          "Recebi sua mensagem! (mas o backend não retornou 'reply')";
+
+        const { items, bubbles } = normalizePlan(data);
+
+        // ✅ Modo Instantâneo: mostra todas as bolhas de uma vez (ou o reply)
+        if (!realModeToggle.checked) {
+          hideTyping();
+          if (Array.isArray(bubbles) && bubbles.length > 0) {
+            bubbles.forEach((b) => addBubble(String(b), "in"));
+          } else {
+            addBubble(reply, "in");
+          }
+          return;
+        }
+
+        // ✅ Modo Real: toca o plano (typing + delays + bolhas)
+        showTyping();
+
+        if (Array.isArray(items) && items.length > 0) {
+          hideTyping();
+          await playResponsePlan(items, reply);
+        } else {
+          // fallback: uma digitação rápida + reply
+          await sleep(650);
+          hideTyping();
+          addBubble(reply, "in");
+        }
+      } catch (err) {
+        hideTyping();
+        addBubble("Ops 😅 tivemos um problema ao responder. Tente novamente.", "in");
+        console.error(err);
+      } finally {
+        setSending(false);
+        input.focus();
+      }
+    }
+
+    sendBtn.addEventListener("click", sendMessage);
+
+    input.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" && !e.shiftKey) {
+        e.preventDefault();
+        sendMessage();
+      }
+    });
+
+    // Mensagem inicial
+    addBubble("Oi! Eu sou a DOCA IA 👋\nMe diga o seu tipo de negócio e o que você quer vender hoje.", "in");
+    input.focus();
+    scrollToBottom();
+  </script>
+
+</body>
+</html>

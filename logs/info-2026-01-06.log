@@ -1,0 +1,42 @@
+{"timestamp":"2026-01-06T05:31:05.743Z","level":"info","message":"WAHA Service initialized","data":{"baseUrl":"http://localhost:3000","session":"default"},"context":"WAHA"}
+{"timestamp":"2026-01-06T05:31:05.746Z","level":"info","message":"AI Service initialized","data":{"provider":"openai","model":"gpt-4o-mini"},"context":"AI"}
+{"timestamp":"2026-01-06T05:31:05.747Z","level":"info","message":"Starting mcp-doca-v2 v1.0.0"}
+{"timestamp":"2026-01-06T05:31:05.752Z","level":"info","message":"Supabase Service ready","context":"SUPABASE"}
+{"timestamp":"2026-01-06T05:31:05.752Z","level":"info","message":"Connecting transport..."}
+{"timestamp":"2026-01-06T05:31:05.752Z","level":"info","message":"mcp-doca-v2 running on stdio"}
+{"timestamp":"2026-01-06T05:31:05.753Z","level":"info","message":"Tools available: 19"}
+{"timestamp":"2026-01-06T05:31:05.753Z","level":"info","message":"Resources available: 3"}
+{"timestamp":"2026-01-06T05:33:25.481Z","level":"info","message":"Shutting down..."}
+{"timestamp":"2026-01-06T05:33:28.863Z","level":"info","message":"WAHA Service initialized","data":{"baseUrl":"http://localhost:3000","session":"default"},"context":"WAHA"}
+{"timestamp":"2026-01-06T05:33:28.866Z","level":"info","message":"AI Service initialized","data":{"provider":"openai","model":"gpt-4o-mini"},"context":"AI"}
+{"timestamp":"2026-01-06T05:33:28.867Z","level":"info","message":"Starting mcp-doca-v2 v1.0.0"}
+{"timestamp":"2026-01-06T05:33:28.874Z","level":"info","message":"Supabase Service ready","context":"SUPABASE"}
+{"timestamp":"2026-01-06T05:33:28.875Z","level":"info","message":"Connecting transport..."}
+{"timestamp":"2026-01-06T05:33:28.876Z","level":"info","message":"mcp-doca-v2 running on stdio"}
+{"timestamp":"2026-01-06T05:33:28.876Z","level":"info","message":"Tools available: 19"}
+{"timestamp":"2026-01-06T05:33:28.876Z","level":"info","message":"Resources available: 3"}
+{"timestamp":"2026-01-06T05:34:07.096Z","level":"info","message":"Shutting down..."}
+{"timestamp":"2026-01-06T05:34:07.381Z","level":"info","message":"WAHA Service initialized","data":{"baseUrl":"http://localhost:3000","session":"default"},"context":"WAHA"}
+{"timestamp":"2026-01-06T05:34:07.384Z","level":"info","message":"AI Service initialized","data":{"provider":"openai","model":"gpt-4o-mini"},"context":"AI"}
+{"timestamp":"2026-01-06T05:34:07.385Z","level":"info","message":"Starting mcp-doca-v2 v1.0.0"}
+{"timestamp":"2026-01-06T05:34:07.391Z","level":"info","message":"Supabase Service ready","context":"SUPABASE"}
+{"timestamp":"2026-01-06T05:34:07.391Z","level":"info","message":"Connecting transport..."}
+{"timestamp":"2026-01-06T05:34:07.392Z","level":"info","message":"mcp-doca-v2 running on stdio"}
+{"timestamp":"2026-01-06T05:34:07.392Z","level":"info","message":"Tools available: 19"}
+{"timestamp":"2026-01-06T05:34:07.393Z","level":"info","message":"Resources available: 3"}
+{"timestamp":"2026-01-06T05:34:09.989Z","level":"info","message":"Shutting down..."}
+{"timestamp":"2026-01-06T05:34:12.584Z","level":"info","message":"AI Service initialized","data":{"provider":"openai","model":"gpt-4o-mini"},"context":"AI"}
+{"timestamp":"2026-01-06T05:34:12.585Z","level":"info","message":"Response Agent initialized","data":{"tone":"professional","maxContext":10},"context":"AGENT"}
+{"timestamp":"2026-01-06T05:34:12.586Z","level":"info","message":"WAHA Service initialized","data":{"baseUrl":"http://localhost:3000","session":"default"},"context":"WAHA"}
+{"timestamp":"2026-01-06T05:34:12.588Z","level":"info","message":"Supabase Service ready","context":"SUPABASE"}
+{"timestamp":"2026-01-06T05:34:12.601Z","level":"info","message":"Webhook server running on http://0.0.0.0:3002","context":"WEBHOOK"}
+{"timestamp":"2026-01-06T05:34:12.602Z","level":"info","message":"Available endpoints:","context":"WEBHOOK"}
+{"timestamp":"2026-01-06T05:34:12.602Z","level":"info","message":"  GET  /              - Dashboard","context":"WEBHOOK"}
+{"timestamp":"2026-01-06T05:34:12.603Z","level":"info","message":"  POST /webhook/waha  - WAHA webhook","context":"WEBHOOK"}
+{"timestamp":"2026-01-06T05:34:12.603Z","level":"info","message":"  GET  /health        - Health check","context":"WEBHOOK"}
+{"timestamp":"2026-01-06T05:34:12.603Z","level":"info","message":"  GET  /stats         - Statistics","context":"WEBHOOK"}
+{"timestamp":"2026-01-06T05:34:12.605Z","level":"info","message":"  POST /send          - Send message","context":"WEBHOOK"}
+{"timestamp":"2026-01-06T05:34:12.605Z","level":"info","message":"  POST /api/chat      - Chat demo endpoint","context":"WEBHOOK"}
+{"timestamp":"2026-01-06T05:57:11.118Z","level":"info","message":"Shutting down..."}
+{"timestamp":"2026-01-06T05:57:11.144Z","level":"info","message":"Webhook server stopped","context":"WEBHOOK"}
+{"timestamp":"2026-01-06T05:57:11.144Z","level":"info","message":"Supabase Service closed","context":"SUPABASE"}

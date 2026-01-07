@@ -2,70 +2,297 @@
 @tailwind components;
 @tailwind utilities;
 
+/* =========================================================
+   DOCA AI — Premium Dark SaaS Theme (Index CSS)
+   - Keeps dark premium feel
+   - Subtle orange/cyan glows
+   - Smooth typography & scrollbar
+   ========================================================= */
+
 :root {
-  --primary-color: #f57f17;
-  --primary-hover: #D94A00;
-  --bg-primary: #FFFFFF;
-  --bg-secondary: #F8F9FA;
-  --bg-dark: #000000;
-  --text-primary: #000000;
-  --text-secondary: #555555;
-  --text-light: #FFFFFF;
-  --border-color: #EAEAEA;
-  --success-color: #28A745;
-  --danger-color: #DC3545;
-  --warning-color: #FFC107;
-  --info-color: #17A2B8;
+  --primary: #f57f17;
+  --primary-2: #d94a00;
+
+  --bg-0: #07090d;
+  --bg-1: #090b10;
+  --bg-2: #0b0f17;
+
+  --card: rgba(255, 255, 255, 0.04);
+  --card-2: rgba(255, 255, 255, 0.06);
+  --stroke: rgba(255, 255, 255, 0.10);
+  --stroke-2: rgba(255, 255, 255, 0.14);
+
+  --text: #ffffff;
+  --muted: rgba(255, 255, 255, 0.55);
+  --muted-2: rgba(255, 255, 255, 0.40);
+
+  --success: #22c55e;
+  --warning: #f59e0b;
+  --danger: #ef4444;
+  --info: #06b6d4;
+}
+
+html,
+body {
+  height: 100%;
 }
 
 body {
-  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-  background: linear-gradient(135deg, #000000 0%, #1a1a1a 100%);
+  font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+    sans-serif;
+  color: var(--text);
   min-height: 100vh;
+
+  /* Premium dark background */
+  background:
+    radial-gradient(1100px circle at 12% 5%, rgba(245, 127, 23, 0.16) 0%, transparent 60%),
+    radial-gradient(950px circle at 92% 25%, rgba(6, 182, 212, 0.12) 0%, transparent 55%),
+    radial-gradient(900px circle at 85% 95%, rgba(34, 197, 94, 0.07) 0%, transparent 60%),
+    linear-gradient(135deg, var(--bg-0) 0%, var(--bg-1) 45%, var(--bg-0) 100%);
 }
 
+/* ---------------------------------------------------------
+   Scrollbar
+   --------------------------------------------------------- */
 ::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
+  width: 10px;
+  height: 10px;
 }
-
 ::-webkit-scrollbar-track {
-  background: #1a1a1a;
+  background: rgba(255, 255, 255, 0.06);
 }
-
 ::-webkit-scrollbar-thumb {
-  background: #f57f17;
-  border-radius: 4px;
+  background: rgba(245, 127, 23, 0.55);
+  border-radius: 999px;
 }
-
 ::-webkit-scrollbar-thumb:hover {
-  background: #D94A00;
+  background: rgba(217, 74, 0, 0.75);
 }
 
+/* ---------------------------------------------------------
+   Base utilities (soft borders + subtle blur)
+   --------------------------------------------------------- */
+.glass {
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.10);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.05);
+}
+
+.glass-strong {
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  backdrop-filter: blur(22px);
+  -webkit-backdrop-filter: blur(22px);
+  box-shadow:
+    0 0 0 1px rgba(255, 255, 255, 0.05),
+    0 18px 60px rgba(0, 0, 0, 0.35);
+}
+
+.card-shadow {
+  box-shadow:
+    0 0 0 1px rgba(255, 255, 255, 0.06),
+    0 20px 80px rgba(0, 0, 0, 0.45);
+}
+
+.soft-ring {
+  box-shadow: 0 0 0 1px rgba(245, 127, 23, 0.12);
+}
+
+/* ---------------------------------------------------------
+   Glow animations (subtle)
+   --------------------------------------------------------- */
 @keyframes pulse-glow {
-  0%, 100% {
-    box-shadow: 0 0 5px rgba(245, 127, 23, 0.5);
+  0%,
+  100% {
+    box-shadow: 0 0 18px rgba(245, 127, 23, 0.14);
   }
   50% {
-    box-shadow: 0 0 20px rgba(245, 127, 23, 0.8);
+    box-shadow: 0 0 34px rgba(245, 127, 23, 0.22);
   }
 }
 
 .pulse-glow {
-  animation: pulse-glow 2s infinite;
+  animation: pulse-glow 2.2s ease-in-out infinite;
 }
 
+/* ---------------------------------------------------------
+   Slide in animation
+   --------------------------------------------------------- */
 @keyframes slide-in {
   from {
-    transform: translateX(-100%);
+    transform: translateY(8px);
     opacity: 0;
   }
   to {
-    transform: translateX(0);
+    transform: translateY(0);
     opacity: 1;
   }
 }
 
 .slide-in {
-  animation: slide-in 0.3s ease-out;
+  animation: slide-in 0.28s ease-out;
+}
+
+/* ---------------------------------------------------------
+   Text rendering improvements
+   --------------------------------------------------------- */
+* {
+  text-rendering: geometricPrecision;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* =========================================================
+   DOCA AI — Premium Dark SaaS Theme (Index CSS)
+   - Keeps dark premium feel
+   - Subtle orange/cyan glows
+   - Smooth typography & scrollbar
+   ========================================================= */
+
+:root {
+  --primary: #f57f17;
+  --primary-2: #d94a00;
+
+  --bg-0: #07090d;
+  --bg-1: #090b10;
+  --bg-2: #0b0f17;
+
+  --card: rgba(255, 255, 255, 0.04);
+  --card-2: rgba(255, 255, 255, 0.06);
+  --stroke: rgba(255, 255, 255, 0.10);
+  --stroke-2: rgba(255, 255, 255, 0.14);
+
+  --text: #ffffff;
+  --muted: rgba(255, 255, 255, 0.55);
+  --muted-2: rgba(255, 255, 255, 0.40);
+
+  --success: #22c55e;
+  --warning: #f59e0b;
+  --danger: #ef4444;
+  --info: #06b6d4;
+}
+
+html,
+body {
+  height: 100%;
+}
+
+body {
+  font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+    sans-serif;
+  color: var(--text);
+  min-height: 100vh;
+
+  /* Premium dark background */
+  background:
+    radial-gradient(1100px circle at 12% 5%, rgba(245, 127, 23, 0.16) 0%, transparent 60%),
+    radial-gradient(950px circle at 92% 25%, rgba(6, 182, 212, 0.12) 0%, transparent 55%),
+    radial-gradient(900px circle at 85% 95%, rgba(34, 197, 94, 0.07) 0%, transparent 60%),
+    linear-gradient(135deg, var(--bg-0) 0%, var(--bg-1) 45%, var(--bg-0) 100%);
+}
+
+/* ---------------------------------------------------------
+   Scrollbar
+   --------------------------------------------------------- */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-track {
+  background: rgba(255, 255, 255, 0.06);
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(245, 127, 23, 0.55);
+  border-radius: 999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(217, 74, 0, 0.75);
+}
+
+/* ---------------------------------------------------------
+   Base utilities (soft borders + subtle blur)
+   --------------------------------------------------------- */
+.glass {
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.10);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.05);
+}
+
+.glass-strong {
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  backdrop-filter: blur(22px);
+  -webkit-backdrop-filter: blur(22px);
+  box-shadow:
+    0 0 0 1px rgba(255, 255, 255, 0.05),
+    0 18px 60px rgba(0, 0, 0, 0.35);
+}
+
+.card-shadow {
+  box-shadow:
+    0 0 0 1px rgba(255, 255, 255, 0.06),
+    0 20px 80px rgba(0, 0, 0, 0.45);
+}
+
+.soft-ring {
+  box-shadow: 0 0 0 1px rgba(245, 127, 23, 0.12);
+}
+
+/* ---------------------------------------------------------
+   Glow animations (subtle)
+   --------------------------------------------------------- */
+@keyframes pulse-glow {
+  0%,
+  100% {
+    box-shadow: 0 0 18px rgba(245, 127, 23, 0.14);
+  }
+  50% {
+    box-shadow: 0 0 34px rgba(245, 127, 23, 0.22);
+  }
+}
+
+.pulse-glow {
+  animation: pulse-glow 2.2s ease-in-out infinite;
+}
+
+/* ---------------------------------------------------------
+   Slide in animation
+   --------------------------------------------------------- */
+@keyframes slide-in {
+  from {
+    transform: translateY(8px);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+.slide-in {
+  animation: slide-in 0.28s ease-out;
+}
+
+/* ---------------------------------------------------------
+   Text rendering improvements
+   --------------------------------------------------------- */
+* {
+  text-rendering: geometricPrecision;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+/* ---------- horizontal nav scroll (no ugly scrollbar) ---------- */
+.no-scrollbar {
+  -ms-overflow-style: none; /* IE and Edge */
+  scrollbar-width: none; /* Firefox */
+}
+.no-scrollbar::-webkit-scrollbar {
+  display: none; /* Chrome, Safari */
 }

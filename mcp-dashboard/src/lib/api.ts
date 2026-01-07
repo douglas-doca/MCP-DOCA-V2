@@ -1,0 +1,168 @@
+// src/lib/api.ts
+// API client do Dashboard (HTTP server / webhook)
+// ------------------------------------------------
+
+export type Conversation = {
+  id: string;
+  chat_id: string;
+  phone: string;
+  lead_id?: string | null;
+  status?: string;
+  context?: any;
+  created_at?: string;
+  updated_at?: string;
+  last_message_at?: string;
+
+  // extras que seu backend manda
+  emotion_history?: any[];
+  current_emotion?: string;
+  emotion_score?: number;
+  temperature?: number;
+
+  // opcional (nem sempre vem)
+  last_message?: string;
+};
+
+export type Lead = {
+  id: string;
+  phone: string;
+  name?: string | null;
+  email?: string | null;
+  source?: string;
+  score?: number;
+  status?: string;
+  tags?: string[];
+
+  created_at?: string;
+  updated_at?: string;
+
+  // extras do seu backend
+  emotion_profile?: any;
+  health_score?: number;
+  stage?: string;
+  urgency_level?: string;
+  conversion_probability?: number;
+};
+
+export type Message = {
+  id: string;
+  conversation_id: string;
+  role?: "user" | "assistant" | "system";
+  content?: string;
+  timestamp?: string;
+};
+
+// shape REAL do backend atual (/api/stats)
+export type RawStats = {
+  totalLeads: number;
+  totalConversations: number;
+  totalMessages: number;
+  activeConversations: number;
+  newLeads: number;
+  qualifiedLeads: number;
+
+  conversationsByStatus?: Record<string, number>;
+  leadsByStatus?: Record<string, number>;
+};
+
+// shape que o DashboardV2 espera
+export type DashboardV2Stats = {
+  conversations_total?: number;
+  leads_total?: number;
+  qualified_total?: number;
+  avg_response_time_seconds?: number;
+
+  emotions_distribution?: Record<string, number>;
+  activity_last_7_days?: Array<{ name: string; value: number }>;
+};
+
+// ------------------------------------------------
+// API URL resolver
+// ------------------------------------------------
+
+function resolveBaseUrl() {
+  // ✅ 1) Se tiver setado no .env, usa
+  const envUrl = import.meta.env.VITE_API_URL as string | undefined;
+  if (envUrl) return envUrl.replace(/\/$/, "");
+
+  // ✅ 2) Default: usa o host atual (DEV e PROD)
+  // Ex: https://mcp.docaperformance.com.br -> https://mcp.docaperformance.com.br/api
+  // Ex: https://dev.mcp.docaperformance.com.br -> https://dev.mcp.docaperformance.com.br/api
+  if (typeof window !== "undefined") {
+    return `${window.location.origin}/api`;
+  }
+
+  // ✅ 3) fallback SSR / build
+  return "http://localhost:3002/api";
+}
+
+const BASE_URL = resolveBaseUrl();
+
+async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  const url = `${BASE_URL}${path}`;
+
+  const res = await fetch(url, {
+    ...init,
+    headers: {
+      "Content-Type": "application/json",
+      ...(init?.headers || {}),
+    },
+  });
+
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    console.error(`[API] ${res.status} ${url}`, text);
+    throw new Error(`API error ${res.status}: ${text || res.statusText}`);
+  }
+
+  return res.json() as Promise<T>;
+}
+
+// ------------------------------------------------
+// Normalizer: backend -> DashboardV2
+// ------------------------------------------------
+
+export function mapStatsToDashboardV2(stats: RawStats | any): DashboardV2Stats {
+  if (!stats) return {};
+
+  return {
+    conversations_total: stats.totalConversations ?? 0,
+    leads_total: stats.totalLeads ?? 0,
+    qualified_total: stats.qualifiedLeads ?? 0,
+    avg_response_time_seconds: stats.avgResponseTimeSeconds ?? 0,
+
+    // opcionais caso venha no futuro
+    emotions_distribution: stats.emotionsDistribution ?? {},
+    activity_last_7_days: stats.activityLast7Days ?? [],
+  };
+}
+
+// ------------------------------------------------
+// Endpoints
+// ------------------------------------------------
+
+export async function getStats(): Promise<DashboardV2Stats> {
+  const raw = await request<RawStats>("/stats");
+  return mapStatsToDashboardV2(raw);
+}
+
+export async function getConversations(limit = 50): Promise<Conversation[]> {
+  return request<Conversation[]>(`/conversations?limit=${limit}`);
+}
+
+export async function getLeads(limit = 50): Promise<Lead[]> {
+  return request<Lead[]>(`/leads?limit=${limit}`);
+}
+
+export async function getMessages(conversationId: string, limit = 50) {
+  return request<Message[]>(
+    `/messages?conversation_id=${conversationId}&limit=${limit}`
+  );
+}
+
+// ------------------------------------------------
+// util: debug
+// ------------------------------------------------
+export function getApiBaseUrl() {
+  return BASE_URL;
+}

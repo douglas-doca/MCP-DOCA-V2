@@ -15,7 +15,7 @@ export interface WAHAMessage {
   to: string;
   body: string;
   timestamp: number;
-  type: 'text' | 'image' | 'audio' | 'video' | 'document' | 'sticker';
+  type: "text" | "image" | "audio" | "video" | "document" | "sticker";
   hasMedia: boolean;
   mediaUrl?: string;
   isFromMe: boolean;
@@ -65,27 +65,38 @@ export interface Conversation {
 
 export interface Message {
   id: string;
-  role: 'user' | 'assistant' | 'system';
+  role: "user" | "assistant" | "system";
   content: string;
   timestamp: Date;
   metadata?: MessageMetadata;
 }
 
 export interface MessageMetadata {
+  // ✅ Origem da mensagem (ex: "web_demo", "waha", "manual")
+  source?: string;
+
+  // ✅ Integração WAHA
   wahaMessageId?: string;
+
+  // ✅ Observabilidade / IA
   tokens?: number;
   processingTime?: number;
-  intent?: string;
+
+  // ✅ NLP / Emotion (usado no chat demo e na pipeline)
+  intent?: string; // já existia
+  emotion?: string;
+  intention?: string;
+  shouldEscalate?: boolean;
 }
 
-export type ConversationStatus = 
-  | 'new'
-  | 'active'
-  | 'waiting_response'
-  | 'qualified'
-  | 'scheduled'
-  | 'closed'
-  | 'ghosted';
+export type ConversationStatus =
+  | "new"
+  | "active"
+  | "waiting_response"
+  | "qualified"
+  | "scheduled"
+  | "closed"
+  | "ghosted";
 
 export interface ConversationContext {
   leadScore?: number;
@@ -96,17 +107,17 @@ export interface ConversationContext {
   customData?: Record<string, unknown>;
 }
 
-export type FunnelStage = 
-  | 'awareness'
-  | 'interest'
-  | 'consideration'
-  | 'decision'
-  | 'action'
-  | 'retention';
+export type FunnelStage =
+  | "awareness"
+  | "interest"
+  | "consideration"
+  | "decision"
+  | "action"
+  | "retention";
 
 // ============ AI Types ============
 export interface AIConfig {
-  provider: 'openai' | 'anthropic';
+  provider: "openai" | "anthropic";
   model: string;
   apiKey: string;
   maxTokens: number;
@@ -121,7 +132,7 @@ export interface AICompletionParams {
 }
 
 export interface AIMessage {
-  role: 'user' | 'assistant' | 'system';
+  role: "user" | "assistant" | "system";
   content: string;
 }
 
@@ -145,11 +156,11 @@ export interface Agent {
   active: boolean;
 }
 
-export type AgentType = 
-  | 'response'      // Responde mensagens
-  | 'prospecting'   // Prospecção ativa
-  | 'followup'      // Follow-up automático
-  | 'qualifier';    // Qualificação de leads
+export type AgentType =
+  | "response" // Responde mensagens
+  | "prospecting" // Prospecção ativa
+  | "followup" // Follow-up automático
+  | "qualifier"; // Qualificação de leads
 
 export interface AgentConfig {
   maxMessagesPerConversation?: number;
@@ -180,9 +191,9 @@ export interface AntiGhostingConfig {
 }
 
 export interface EscalationRule {
-  trigger: 'keyword' | 'sentiment' | 'timeout' | 'manual';
+  trigger: "keyword" | "sentiment" | "timeout" | "manual";
   condition: string;
-  action: 'transfer_human' | 'notify' | 'tag';
+  action: "transfer_human" | "notify" | "tag";
   target?: string;
 }
 
@@ -199,15 +210,21 @@ export interface Lead {
   customFields: Record<string, unknown>;
   createdAt: Date;
   updatedAt: Date;
+
+  // ✅ Funil / Emocional / Saúde (usado por AIAnalysis + ResponseAgent)
+  stage?: string; // pode tipar com LeadStage depois
+  health_score?: number; // 0..100
+  urgency_level?: "low" | "normal" | "high" | "critical";
+  conversion_probability?: number; // 0..1
 }
 
-export type LeadStatus = 
-  | 'new'
-  | 'contacted'
-  | 'qualified'
-  | 'negotiating'
-  | 'won'
-  | 'lost';
+export type LeadStatus =
+  | "new"
+  | "contacted"
+  | "qualified"
+  | "negotiating"
+  | "won"
+  | "lost";
 
 // ============ Prospecting Types ============
 export interface ProspectingSequence {
@@ -226,8 +243,8 @@ export interface ProspectingStep {
 }
 
 export interface TriggerCondition {
-  type: 'tag' | 'status' | 'score' | 'time';
-  operator: 'equals' | 'contains' | 'gt' | 'lt';
+  type: "tag" | "status" | "score" | "time";
+  operator: "equals" | "contains" | "gt" | "lt";
   value: string | number;
 }
 
@@ -256,7 +273,7 @@ export interface WebhookEvent {
 
 // ============ Database Types ============
 export interface DatabaseConfig {
-  type: 'sqlite' | 'postgres' | 'supabase';
+  type: "sqlite" | "postgres" | "supabase";
   connectionString?: string;
   filePath?: string;
 }
@@ -266,5 +283,5 @@ export interface ServerConfig {
   port: number;
   host: string;
   corsOrigins: string[];
-  logLevel: 'debug' | 'info' | 'warn' | 'error';
+  logLevel: "debug" | "info" | "warn" | "error";
 }

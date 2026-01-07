@@ -17,6 +17,11 @@ import { logger } from './utils/logger.js';
 import { wahaService } from './services/waha.service.js';
 import { aiService } from './services/ai.service.js';
 
+// ✅ NOVOS SERVICES
+import { analysisService } from './services/analysis.service.js';
+import { emotionService } from './services/emotion.service.js';
+import { supabaseService } from './services/supabase.service.js';
+
 // ============================================
 // Server Configuration
 // ============================================
@@ -239,6 +244,117 @@ const TOOLS = [
       properties: {},
     },
   },
+
+  // ========== Analysis Tools (Follow-ups IA) ==========
+  {
+    name: 'analysis_get_stalled_conversations',
+    description: 'Lista conversas paradas para sugerir follow-ups',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        min_minutes: {
+          type: 'number',
+          description: 'Mínimo de minutos parado (ex: 240)',
+        },
+        limit: { type: 'number', description: 'Quantidade máxima (ex: 20)' },
+        status: {
+          type: 'string',
+          enum: ['open', 'closed'],
+          description: 'Status da conversa (padrão: open)',
+        },
+      },
+      required: [] as string[],
+    },
+  },
+  {
+    name: 'analysis_get_summary',
+    description:
+      'Resumo geral da aba de análise (stalled, followups sugeridos, enviados)',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        range: {
+          type: 'string',
+          enum: ['today', '7d', '30d'],
+          description: 'Período (today, 7d, 30d)',
+        },
+      },
+      required: [] as string[],
+    },
+  },
+  {
+    name: 'analysis_run_followup',
+    description:
+      'Roda IA em uma conversa e sugere follow-up + alternativas',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        conversation_id: {
+          type: 'string',
+          description: 'ID da conversa (conv-xxx ou uuid)',
+        },
+        mode: {
+          type: 'string',
+          enum: ['followup', 'insights'],
+          description: 'Modo de análise',
+        },
+        language: {
+          type: 'string',
+          description: 'Idioma (ex: pt-BR)',
+        },
+      },
+      required: ['conversation_id'],
+    },
+  },
+  {
+    name: 'analysis_approve_send_followup',
+    description: 'Aprova e envia o follow-up pelo WhatsApp (WAHA)',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        conversation_id: { type: 'string', description: 'ID da conversa' },
+        text: { type: 'string', description: 'Texto aprovado para envio' },
+        followup_id: {
+          type: 'string',
+          description: 'ID do followup salvo (opcional)',
+        },
+        phone: {
+          type: 'string',
+          description: 'Telefone/chatId (opcional, força envio)',
+        },
+      },
+      required: ['conversation_id', 'text'],
+    },
+  },
+
+  // ========== Emotion Tools ==========
+  {
+    name: 'emotion_get_dashboard_metrics',
+    description:
+      'Retorna métricas gerais: total leads, média health, total eventos, distribuições',
+    inputSchema: { type: 'object', properties: {}, required: [] as string[] },
+  },
+  {
+    name: 'emotion_get_sentiment_matrix',
+    description: 'Retorna a matriz sentimento x intenção para dashboard',
+    inputSchema: { type: 'object', properties: {}, required: [] as string[] },
+  },
+  {
+    name: 'emotion_get_emotional_funnel',
+    description: 'Retorna funil emocional (stages + contagens)',
+    inputSchema: { type: 'object', properties: {}, required: [] as string[] },
+  },
+  {
+    name: 'emotion_get_lead_health',
+    description: 'Retorna health score + estágio emocional de um lead',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        lead_id: { type: 'string', description: 'ID do lead' },
+      },
+      required: ['lead_id'],
+    },
+  },
 ];
 
 // ============================================
@@ -292,11 +408,15 @@ server.setRequestHandler(ReadResourceRequestSchema, async (request) => {
 
     switch (uri) {
       case 'doca://config/server':
-        content = JSON.stringify({
-          name: SERVER_NAME,
-          version: SERVER_VERSION,
-          timestamp: new Date().toISOString(),
-        }, null, 2);
+        content = JSON.stringify(
+          {
+            name: SERVER_NAME,
+            version: SERVER_VERSION,
+            timestamp: new Date().toISOString(),
+          },
+          null,
+          2
+        );
         break;
 
       case 'doca://config/ai':
@@ -317,11 +437,13 @@ server.setRequestHandler(ReadResourceRequestSchema, async (request) => {
     }
 
     return {
-      contents: [{
-        uri,
-        mimeType: 'application/json',
-        text: content,
-      }],
+      contents: [
+        {
+          uri,
+          mimeType: 'application/json',
+          text: content,
+        },
+      ],
     };
   } catch (error) {
     logger.error(`Error reading resource: ${uri}`, error);
@@ -371,14 +493,11 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
       // ========== AI Tools ==========
       case 'ai_generate_response':
-        result = await aiService.generateResponse(
-          args.userMessage as string,
-          {
-            leadName: args.leadName as string | undefined,
-            businessInfo: args.context as string | undefined,
-            tone: args.tone as 'formal' | 'casual' | 'professional' | undefined,
-          }
-        );
+        result = await aiService.generateResponse(args.userMessage as string, {
+          leadName: args.leadName as string | undefined,
+          businessInfo: args.context as string | undefined,
+          tone: args.tone as 'formal' | 'casual' | 'professional' | undefined,
+        });
         break;
 
       case 'ai_analyze_intent':
@@ -391,13 +510,19 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
       case 'ai_qualify_lead':
         result = await aiService.qualifyLead(
-          args.conversation as Array<{ role: 'user' | 'assistant'; content: string }>
+          args.conversation as Array<{
+            role: 'user' | 'assistant';
+            content: string;
+          }>
         );
         break;
 
       case 'ai_summarize':
         result = await aiService.summarizeConversation(
-          args.conversation as Array<{ role: 'user' | 'assistant'; content: string }>
+          args.conversation as Array<{
+            role: 'user' | 'assistant';
+            content: string;
+          }>
         );
         break;
 
@@ -412,6 +537,55 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         };
         break;
 
+      // ========== Analysis Tools ==========
+      case 'analysis_get_stalled_conversations':
+        result = await analysisService.getStalledConversations({
+          min_minutes: (args.min_minutes as number) ?? 240,
+          limit: (args.limit as number) ?? 20,
+          status: (args.status as 'open' | 'closed') ?? 'open',
+        });
+        break;
+
+      case 'analysis_get_summary':
+        result = await analysisService.getSummary({
+          range: (args.range as 'today' | '7d' | '30d') ?? 'today',
+        });
+        break;
+
+      case 'analysis_run_followup':
+        result = await analysisService.runAnalysis({
+          conversation_id: args.conversation_id as string,
+          mode: (args.mode as 'followup' | 'insights') ?? 'followup',
+          language: (args.language as string) ?? 'pt-BR',
+        });
+        break;
+
+      case 'analysis_approve_send_followup':
+        result = await analysisService.approveAndSend({
+          conversation_id: args.conversation_id as string,
+          text: args.text as string,
+          followup_id: (args.followup_id as string) || undefined,
+          phone: (args.phone as string) || undefined,
+        });
+        break;
+
+      // ========== Emotion Tools ==========
+      case 'emotion_get_dashboard_metrics':
+        result = await emotionService.getDashboardMetrics();
+        break;
+
+      case 'emotion_get_sentiment_matrix':
+        result = await emotionService.getSentimentMatrix();
+        break;
+
+      case 'emotion_get_emotional_funnel':
+        result = await emotionService.getEmotionalFunnel();
+        break;
+
+      case 'emotion_get_lead_health':
+        result = await emotionService.getLeadHealth(args.lead_id as string);
+        break;
+
       default:
         throw new Error(`Unknown tool: ${name}`);
     }
@@ -419,23 +593,30 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     logger.mcp(`Tool ${name} completed successfully`);
 
     return {
-      content: [{
-        type: 'text',
-        text: typeof result === 'string' ? result : JSON.stringify(result, null, 2),
-      }],
+      content: [
+        {
+          type: 'text',
+          text:
+            typeof result === 'string'
+              ? result
+              : JSON.stringify(result, null, 2),
+        },
+      ],
     };
   } catch (error) {
     logger.error(`Tool ${name} failed`, error);
-    
+
     return {
-      content: [{
-        type: 'text',
-        text: JSON.stringify({
-          error: true,
-          message: error instanceof Error ? error.message : 'Unknown error',
-          tool: name,
-        }),
-      }],
+      content: [
+        {
+          type: 'text',
+          text: JSON.stringify({
+            error: true,
+            message: error instanceof Error ? error.message : 'Unknown error',
+            tool: name,
+          }),
+        },
+      ],
       isError: true,
     };
   }
@@ -447,16 +628,25 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
 async function main() {
   try {
+    // (Opcional) inicializa supabase, caso sua app precise conectar antes
+    // Se seu supabaseService já auto-init no constructor, pode remover.
+    try {
+      if (typeof (supabaseService as any).initialize === 'function') {
+        await (supabaseService as any).initialize();
+      }
+    } catch (e) {
+      logger.warn('Supabase initialize skipped/failed (continuing)...');
+    }
+
     const transport = new StdioServerTransport();
-    
+
     logger.info('Connecting transport...');
     await server.connect(transport);
-    
+
     logger.info(`${SERVER_NAME} running on stdio`);
     logger.info(`Tools available: ${TOOLS.length}`);
     logger.info(`Resources available: ${RESOURCES.length}`);
     logger.separator();
-
   } catch (error) {
     logger.error('Failed to start server', error);
     process.exit(1);

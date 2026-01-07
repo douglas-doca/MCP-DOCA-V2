@@ -1,10 +1,13 @@
-# Build stage
-FROM node:20-alpine as builder
+# Build stage (glibc)
+FROM node:20-bookworm-slim as builder
 
 WORKDIR /app
 
+# Copia package + lock primeiro pra cache funcionar
 COPY package*.json ./
-RUN npm install
+
+# Instala exatamente o lockfile (mais estável)
+RUN npm ci
 
 COPY . .
 RUN npm run build
@@ -12,12 +15,8 @@ RUN npm run build
 # Production stage
 FROM nginx:alpine
 
-# Copy built assets
 COPY --from=builder /app/dist /usr/share/nginx/html
-
-# Copy nginx config
 COPY nginx.conf /etc/nginx/conf.d/default.conf
 
 EXPOSE 80
-
 CMD ["nginx", "-g", "daemon off;"]

@@ -1,0 +1,8 @@
+{"timestamp":"2025-12-31T17:26:10.858Z","level":"info","message":"WAHA Service initialized","data":{"baseUrl":"http://localhost:3000","session":"default"},"context":"WAHA"}
+{"timestamp":"2025-12-31T17:26:10.861Z","level":"info","message":"AI Service initialized","data":{"provider":"openai","model":"gpt-4o-mini"},"context":"AI"}
+{"timestamp":"2025-12-31T17:26:10.861Z","level":"info","message":"Starting mcp-doca-v2 v1.0.0"}
+{"timestamp":"2025-12-31T17:26:10.866Z","level":"info","message":"Connecting transport..."}
+{"timestamp":"2025-12-31T17:26:10.867Z","level":"info","message":"mcp-doca-v2 running on stdio"}
+{"timestamp":"2025-12-31T17:26:10.867Z","level":"info","message":"Tools available: 11"}
+{"timestamp":"2025-12-31T17:26:10.867Z","level":"info","message":"Resources available: 3"}
+{"timestamp":"2025-12-31T17:34:44.209Z","level":"info","message":"Shutting down..."}

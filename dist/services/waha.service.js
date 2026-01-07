@@ -1,25 +1,38 @@
 // ============================================
 // MCP-DOCA-V2 - WAHA Service
 // ============================================
-import { logger } from '../utils/logger.js';
+import { logger } from "../utils/logger.js";
 export class WAHAService {
     baseUrl;
     apiKey;
     session;
     defaultHeaders;
     constructor(config) {
-        this.baseUrl = config?.baseUrl || process.env.WAHA_BASE_URL || 'http://localhost:3000';
-        this.apiKey = config?.apiKey || process.env.WAHA_API_KEY || '';
-        this.session = config?.session || process.env.WAHA_SESSION || 'default';
-        this.defaultHeaders = {
-            'Content-Type': 'application/json',
+        // Alguns ambientes acabam injetando "WAHA_BASE_URL=..." como valor.
+        // Isso limpa esse lixo e deixa apenas o URL.
+        const sanitizeEnvUrl = (v) => {
+            if (!v)
+                return "";
+            return String(v).trim().replace(/^WAHA_BASE_URL=/i, "");
         };
+        const envBaseUrl = sanitizeEnvUrl(process.env.WAHA_BASE_URL);
+        this.baseUrl = (config?.baseUrl || envBaseUrl || "http://localhost:3000").replace(/\/$/, "");
+        this.apiKey = config?.apiKey || process.env.WAHA_API_KEY || "";
+        this.session = config?.session || process.env.WAHA_SESSION || "default";
+        this.defaultHeaders = {
+            "Content-Type": "application/json",
+        };
+        // ✅ Compatível com variações do WAHA:
+        // - X-Api-Key
+        // - Authorization: Bearer
         if (this.apiKey) {
-            this.defaultHeaders['X-Api-Key'] = this.apiKey;
+            this.defaultHeaders["X-Api-Key"] = this.apiKey;
+            this.defaultHeaders["Authorization"] = `Bearer ${this.apiKey}`;
         }
-        logger.waha('WAHA Service initialized', {
+        logger.waha("WAHA Service initialized", {
             baseUrl: this.baseUrl,
-            session: this.session
+            session: this.session,
+            apiKey: this.apiKey ? "***set***" : "***missing***",
         });
     }
     // ============ Helper Methods ============
@@ -33,57 +46,88 @@ export class WAHAService {
                 headers: this.defaultHeaders,
                 body: body ? JSON.stringify(body) : undefined,
             });
-            const data = await response.json();
+            const text = await response.text();
             timer();
+            // tenta parsear json se possível
+            let data = null;
+            try {
+                data = text ? JSON.parse(text) : null;
+            }
+            catch {
+                data = { raw: text };
+            }
             if (!response.ok) {
-                throw new Error(data.message || `WAHA error: ${response.status}`);
+                const msg = data?.message ||
+                    data?.error ||
+                    `WAHA error: ${response.status} ${response.statusText}`;
+                throw new Error(msg);
             }
             return data;
         }
         catch (error) {
-            logger.error('WAHA request failed', { url, error }, 'WAHA');
+            logger.error("WAHA request failed", { url, error }, "WAHA");
             throw error;
         }
     }
-    formatChatId(phone) {
-        // Remove caracteres não numéricos
-        let cleaned = phone.replace(/\D/g, '');
-        // Adiciona código do país se não tiver (Brasil = 55)
-        if (cleaned.length === 11 || cleaned.length === 10) {
-            cleaned = '55' + cleaned;
+    /**
+     * Normaliza chatId:
+     * - Se já vier como WA JID (ex: 5511...@c.us ou @g.us), retorna
+     * - Se vier como `web_xxx@web`, retorna
+     * - Se vier número (com/sem +55), normaliza e converte para @c.us
+     */
+    formatChatId(input) {
+        if (!input)
+            return "";
+        const v = String(input).trim();
+        // Se já for um JID válido (WAHA/WA)
+        if (v.includes("@c.us") || v.includes("@g.us") || v.includes("@web"))
+            return v;
+        // Se for chatId genérico web_...
+        if (v.startsWith("web_"))
+            return `${v}@web`;
+        // Remove tudo que não é número
+        let cleaned = v.replace(/\D/g, "");
+        // Se já vier com 55 e 13 dígitos (ex: 5511999999999)
+        if (cleaned.length === 13 && cleaned.startsWith("55")) {
+            return `${cleaned}@c.us`;
         }
-        // Formato WAHA: 5511999999999@c.us
+        // Se vier com 10/11 dígitos (DDD + número), assume Brasil
+        if (cleaned.length === 10 || cleaned.length === 11) {
+            cleaned = "55" + cleaned;
+            return `${cleaned}@c.us`;
+        }
+        // fallback: tenta usar o que tiver
         return `${cleaned}@c.us`;
     }
     // ============ Session Management ============
     async getSessionStatus() {
-        return this.request('GET', `/api/sessions/${this.session}`);
+        return this.request("GET", `/api/sessions/${this.session}`);
     }
     async startSession() {
-        return this.request('POST', '/api/sessions', {
+        return this.request("POST", "/api/sessions", {
             name: this.session,
             config: {
                 webhooks: [
                     {
-                        url: process.env.WEBHOOK_URL || 'http://localhost:3001/webhook/waha',
-                        events: ['message', 'message.ack', 'session.status'],
+                        url: process.env.WEBHOOK_URL || "http://localhost:3002/webhook/waha",
+                        events: ["message", "message.ack", "session.status"],
                     },
                 ],
             },
         });
     }
     async stopSession() {
-        await this.request('POST', `/api/sessions/${this.session}/stop`);
+        await this.request("POST", `/api/sessions/${this.session}/stop`);
     }
     async getQRCode() {
-        return this.request('GET', `/api/${this.session}/auth/qr`);
+        return this.request("GET", `/api/${this.session}/auth/qr`);
     }
     // ============ Messaging ============
     async sendMessage(params) {
         const chatId = this.formatChatId(params.chatId);
         const session = params.session || this.session;
-        logger.waha('Sending message', { chatId, textLength: params.text.length });
-        return this.request('POST', `/api/sendText`, {
+        logger.waha("Sending message", { chatId, textLength: params.text.length });
+        return this.request("POST", `/api/sendText`, {
             chatId,
             text: params.text,
             session,
@@ -92,8 +136,8 @@ export class WAHAService {
     async sendMedia(params) {
         const chatId = this.formatChatId(params.chatId);
         const session = params.session || this.session;
-        logger.waha('Sending media', { chatId, mediaUrl: params.mediaUrl });
-        return this.request('POST', `/api/sendFile`, {
+        logger.waha("Sending media", { chatId, mediaUrl: params.mediaUrl });
+        return this.request("POST", `/api/sendFile`, {
             chatId,
             file: {
                 url: params.mediaUrl,
@@ -107,7 +151,7 @@ export class WAHAService {
     }
     async sendDocument(chatId, documentUrl, filename) {
         const formattedChatId = this.formatChatId(chatId);
-        return this.request('POST', `/api/sendFile`, {
+        return this.request("POST", `/api/sendFile`, {
             chatId: formattedChatId,
             file: {
                 url: documentUrl,
@@ -118,10 +162,10 @@ export class WAHAService {
     }
     async sendButtons(chatId, text, buttons) {
         const formattedChatId = this.formatChatId(chatId);
-        return this.request('POST', `/api/sendButtons`, {
+        return this.request("POST", `/api/sendButtons`, {
             chatId: formattedChatId,
             text,
-            buttons: buttons.map(btn => ({
+            buttons: buttons.map((btn) => ({
                 id: btn.id,
                 text: btn.text,
             })),
@@ -130,7 +174,7 @@ export class WAHAService {
     }
     async sendList(chatId, title, description, buttonText, sections) {
         const formattedChatId = this.formatChatId(chatId);
-        return this.request('POST', `/api/sendList`, {
+        return this.request("POST", `/api/sendList`, {
             chatId: formattedChatId,
             title,
             description,
@@ -142,69 +186,64 @@ export class WAHAService {
     // ============ Chat Management ============
     async getChatInfo(chatId) {
         const formattedChatId = this.formatChatId(chatId);
-        return this.request('GET', `/api/${this.session}/chats/${formattedChatId}`);
+        return this.request("GET", `/api/${this.session}/chats/${formattedChatId}`);
     }
     async getMessages(chatId, limit = 50) {
         const formattedChatId = this.formatChatId(chatId);
-        return this.request('GET', `/api/${this.session}/chats/${formattedChatId}/messages?limit=${limit}`);
+        return this.request("GET", `/api/${this.session}/chats/${formattedChatId}/messages?limit=${limit}`);
     }
     async markAsRead(chatId) {
         const formattedChatId = this.formatChatId(chatId);
-        await this.request('POST', `/api/${this.session}/chats/${formattedChatId}/read`);
+        await this.request("POST", `/api/${this.session}/chats/${formattedChatId}/read`);
     }
     async sendTyping(chatId, duration = 3000) {
         const formattedChatId = this.formatChatId(chatId);
-        // Start typing
-        await this.request('POST', `/api/${this.session}/startTyping`, {
+        await this.request("POST", `/api/${this.session}/startTyping`, {
             chatId: formattedChatId,
         });
-        // Stop after duration
         setTimeout(async () => {
             try {
-                await this.request('POST', `/api/${this.session}/stopTyping`, {
+                await this.request("POST", `/api/${this.session}/stopTyping`, {
                     chatId: formattedChatId,
                 });
             }
-            catch (e) {
-                // Ignore errors on stop typing
+            catch {
+                // ignore
             }
         }, duration);
     }
     // ============ Contact Management ============
     async getContactInfo(contactId) {
         const formattedId = this.formatChatId(contactId);
-        return this.request('GET', `/api/${this.session}/contacts/${formattedId}`);
+        return this.request("GET", `/api/${this.session}/contacts/${formattedId}`);
     }
     async checkNumberExists(phone) {
-        const formattedPhone = phone.replace(/\D/g, '');
-        return this.request('GET', `/api/${this.session}/contacts/check-exists?phone=${formattedPhone}`);
+        const formattedPhone = String(phone).replace(/\D/g, "");
+        return this.request("GET", `/api/${this.session}/contacts/check-exists?phone=${formattedPhone}`);
     }
     // ============ Utility ============
     async getScreenshot() {
-        return this.request('GET', `/api/${this.session}/screenshot`);
+        return this.request("GET", `/api/${this.session}/screenshot`);
     }
     async getMe() {
         const session = await this.getSessionStatus();
-        if (!session.me) {
-            throw new Error('Session not authenticated');
-        }
+        if (!session.me)
+            throw new Error("Session not authenticated");
         return session.me;
     }
     // ============ Message Formatting Helpers ============
     formatPhoneNumber(phone) {
-        // Remove @c.us e formata para display
-        const cleaned = phone.replace('@c.us', '').replace(/\D/g, '');
-        if (cleaned.length === 13 && cleaned.startsWith('55')) {
-            // Formato brasileiro: +55 (11) 99999-9999
+        const cleaned = phone.replace("@c.us", "").replace(/\D/g, "");
+        if (cleaned.length === 13 && cleaned.startsWith("55")) {
             return `+${cleaned.slice(0, 2)} (${cleaned.slice(2, 4)}) ${cleaned.slice(4, 9)}-${cleaned.slice(9)}`;
         }
         return `+${cleaned}`;
     }
     extractPhoneFromChatId(chatId) {
-        return chatId.replace('@c.us', '').replace('@g.us', '');
+        return String(chatId).replace("@c.us", "").replace("@g.us", "").replace("@web", "");
     }
     isGroup(chatId) {
-        return chatId.endsWith('@g.us');
+        return String(chatId).endsWith("@g.us");
     }
 }
 // Exportar instância singleton

@@ -1,0 +1,15 @@
+FROM node:20-alpine
+
+WORKDIR /app
+
+# Copia manifestos para instalar deps antes do volume montar
+COPY package*.json ./
+
+RUN npm install
+
+# Copia o resto (no DEV isso vai ser sobrescrito pelo volume, mas ok)
+COPY . .
+
+EXPOSE 5173
+
+CMD ["npm", "run", "dev", "--", "--host", "0.0.0.0"]
