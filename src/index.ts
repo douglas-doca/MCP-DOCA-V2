@@ -425,7 +425,9 @@ server.setRequestHandler(ReadResourceRequestSchema, async (request) => {
 
       case 'doca://status/waha':
         try {
-          const status = await wahaService.getSessionStatus();
+          const status = (wahaService as any).getSessionStatus
+            ? await (wahaService as any).getSessionStatus()
+            : { status: 'unknown', message: 'getSessionStatus not available' };
           content = JSON.stringify(status, null, 2);
         } catch (error) {
           content = JSON.stringify({ error: 'WAHA not available' });
@@ -484,11 +486,13 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         break;
 
       case 'waha_check_number':
-        result = await wahaService.checkNumberExists(args.phone as string);
+        result = await wahaService.checkNumber(args.phone as string);
         break;
 
       case 'waha_session_status':
-        result = await wahaService.getSessionStatus();
+        result = (wahaService as any).getSessionStatus
+          ? await (wahaService as any).getSessionStatus()
+          : { status: 'unknown', message: 'getSessionStatus not available' };
         break;
 
       // ========== AI Tools ==========

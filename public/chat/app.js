@@ -1,7 +1,11 @@
 (() => {
-  // Config
-  const API_URL = window.CHAT_API_URL || "/api/chat"; // quando você criar a rota
-  const USE_API = false; // <-- por enquanto: modo local fake (opção 2)
+  // ==========================================
+  // ✅ Config
+  // ==========================================
+  const API_URL =
+    window.CHAT_API_URL || "https://mcp.docaperformance.com.br/api/chat";
+
+  const USE_API = true;
 
   const chatBody = document.getElementById("chatBody");
   const chatForm = document.getElementById("chatForm");
@@ -9,8 +13,32 @@
   const sendBtn = document.getElementById("sendBtn");
   const modeTag = document.getElementById("modeTag");
 
-  modeTag.textContent = USE_API ? "Modo: API" : "Modo: Local";
+  modeTag.textContent = USE_API ? "Modo: API (REAL)" : "Modo: Local (FAKE)";
 
+  // ==========================================
+  // ✅ Identidade do usuário (simula telefone)
+  // - mantém consistência no Supabase / context
+  // ==========================================
+  function getOrCreateAnonPhone() {
+    const key = "doca_demo_phone";
+    let phone = localStorage.getItem(key);
+
+    if (!phone) {
+      // "5511" + 9 dígitos aleatórios (finge celular BR)
+      const rand = Math.floor(100000000 + Math.random() * 900000000);
+      phone = `5511${rand}`;
+      localStorage.setItem(key, phone);
+    }
+
+    return phone;
+  }
+
+  const phone = getOrCreateAnonPhone();
+  const chatId = `landing:${phone}`;
+
+  // ==========================================
+  // UI helpers
+  // ==========================================
   function addMessage(role, text) {
     const msg = document.createElement("div");
     msg.className = `msg ${role}`;
@@ -20,38 +48,45 @@
     chatBody.scrollTop = chatBody.scrollHeight;
   }
 
-  function simulateAgentReply(userText) {
-    const t = userText.toLowerCase();
-
-    if (t.includes("preço") || t.includes("valor") || t.includes("custa")) {
-      return "Boa! O investimento depende do volume e integrações. Quer me dizer quantos atendimentos/mês e quais canais (WhatsApp, Instagram, Site)?";
-    }
-    if (t.includes("caro") || t.includes("desconto")) {
-      return "Entendi a objeção de preço. Posso te mostrar o ROI típico (250%–500%) e como a automação paga em 15–30 dias. Qual seu ticket médio hoje?";
-    }
-    if (t.includes("cancelar")) {
-      return "Parece que existe risco de churn. Antes de cancelar, me diz o que te frustrou? Atendimento, tempo, ou resultado?";
-    }
-    if (t.includes("pressa") || t.includes("urgente")) {
-      return "Perfeito. Vou priorizar: me diga seu segmento e o volume aproximado de leads por dia. Eu te passo um plano rápido em 60s.";
-    }
-    if (t.includes("oi") || t.includes("olá")) {
-      return "Oi! 👋 Me diz: você quer aumentar vendas, reduzir custo ou ter mais controle (dashboard + alertas)?";
-    }
-    return "Entendi. Pra eu te ajudar melhor: qual seu segmento e qual canal principal (WhatsApp, Instagram, Site)?";
+  function addTyping() {
+    const msg = document.createElement("div");
+    msg.className = `msg bot typing`;
+    msg.innerHTML = `<div class="bubble">digitando…</div>`;
+    chatBody.appendChild(msg);
+    chatBody.scrollTop = chatBody.scrollHeight;
+    return msg;
   }
 
+  function removeTyping(typingEl) {
+    if (typingEl && typingEl.parentNode) typingEl.parentNode.removeChild(typingEl);
+  }
+
+  // ==========================================
+  // ✅ API call (backend real)
+  // ==========================================
   async function sendToApi(userText) {
     const res = await fetch(API_URL, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ message: userText }),
+      body: JSON.stringify({
+        phone,
+        chatId,
+        message: userText,
+        source: "landing_demo",
+      }),
     });
 
-    if (!res.ok) throw new Error("API error");
+    if (!res.ok) {
+      const errText = await res.text().catch(() => "");
+      throw new Error(`API error ${res.status}: ${errText}`);
+    }
+
     return res.json();
   }
 
+  // ==========================================
+  // Submit
+  // ==========================================
   chatForm.addEventListener("submit", async (e) => {
     e.preventDefault();
 
@@ -62,23 +97,34 @@
     input.value = "";
     input.focus();
 
-    // "typing"
     sendBtn.disabled = true;
+    const typingEl = addTyping();
 
-    setTimeout(async () => {
-      try {
-        if (!USE_API) {
-          const reply = simulateAgentReply(userText);
-          addMessage("bot", reply);
-        } else {
-          const data = await sendToApi(userText);
-          addMessage("bot", data.reply || data.response || "Ok.");
-        }
-      } catch (err) {
-        addMessage("bot", "Ops! Tive um problema pra responder agora. Tente novamente.");
-      } finally {
-        sendBtn.disabled = false;
+    try {
+      if (!USE_API) {
+        // fallback antigo (não use)
+        removeTyping(typingEl);
+        addMessage("bot", "Modo local fake está ligado. Ative a API.");
+      } else {
+        const data = await sendToApi(userText);
+
+        removeTyping(typingEl);
+
+        // ✅ teu backend pode retornar { response } ou { reply }
+        const text = data.reply || data.response || "Ok.";
+        addMessage("bot", text);
+
+        // ✅ Se quiser usar responsePlan depois:
+        // if (data.responsePlan?.bubbles?.length) {
+        //   data.responsePlan.bubbles.forEach((b) => addMessage("bot", b));
+        // }
       }
-    }, 450);
+    } catch (err) {
+      removeTyping(typingEl);
+      addMessage("bot", "Ops! Tive um problema pra responder agora. Tente novamente.");
+      console.error(err);
+    } finally {
+      sendBtn.disabled = false;
+    }
   });
 })();

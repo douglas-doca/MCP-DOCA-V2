@@ -384,222 +384,233 @@
   </div>
 
   <script>
-    // ===============================
-    // Config
-    // ===============================
-    const API_URL = "/api/chat";
+  // ===============================
+  // Config
+  // ===============================
+  const API_URL = "/api/chat";
 
-    const sessionId = (() => {
-      const key = "doca_chat_session_id";
-      const existing = localStorage.getItem(key);
-      if (existing) return existing;
-      const id = "sess_" + Math.random().toString(36).slice(2) + Date.now().toString(36);
-      localStorage.setItem(key, id);
-      return id;
-    })();
+  function getUtm() {
+    const url = new URL(window.location.href);
+    return {
+      utm_source: url.searchParams.get("utm_source"),
+      utm_medium: url.searchParams.get("utm_medium"),
+      utm_campaign: url.searchParams.get("utm_campaign"),
+      utm_content: url.searchParams.get("utm_content"),
+      utm_term: url.searchParams.get("utm_term"),
+    };
+  }
 
-    const chat = document.getElementById("chat");
-    const input = document.getElementById("input");
-    const sendBtn = document.getElementById("send");
-    const realModeToggle = document.getElementById("realMode");
+  const sessionId = (() => {
+    // ✅ Melhor pra demo: sessão por aba (evita conversa velha reaparecer)
+    const key = "doca_chat_session_id";
+    const existing = sessionStorage.getItem(key);
+    if (existing) return existing;
+    const id = "sess_" + Math.random().toString(36).slice(2) + Date.now().toString(36);
+    sessionStorage.setItem(key, id);
+    return id;
+  })();
 
-    let isPlayingPlan = false;
-    let typingEl = null;
+  const chat = document.getElementById("chat");
+  const input = document.getElementById("input");
+  const sendBtn = document.getElementById("send");
+  const realModeToggle = document.getElementById("realMode");
 
-    function nowTime() {
-      const d = new Date();
-      const hh = String(d.getHours()).padStart(2, "0");
-      const mm = String(d.getMinutes()).padStart(2, "0");
-      return `${hh}:${mm}`;
-    }
+  let isPlayingPlan = false;
+  let typingEl = null;
 
-    function scrollToBottom() {
-      chat.scrollTop = chat.scrollHeight;
-    }
+  function nowTime() {
+    const d = new Date();
+    const hh = String(d.getHours()).padStart(2, "0");
+    const mm = String(d.getMinutes()).padStart(2, "0");
+    return `${hh}:${mm}`;
+  }
 
-    function sleep(ms) {
-      return new Promise((resolve) => setTimeout(resolve, ms || 0));
-    }
+  function scrollToBottom() {
+    chat.scrollTop = chat.scrollHeight;
+  }
 
-    function addBubble(text, side) {
-      const wrap = document.createElement("div");
-      wrap.className = "bubble " + (side === "out" ? "out" : "in");
-      wrap.textContent = text;
+  function sleep(ms) {
+    return new Promise((resolve) => setTimeout(resolve, ms || 0));
+  }
 
-      const meta = document.createElement("div");
-      meta.className = "meta";
-      meta.innerHTML = `<span>${nowTime()}</span>${side === "out" ? `<span class="ticks">✓✓</span>` : ""}`;
+  function addBubble(text, side) {
+    const wrap = document.createElement("div");
+    wrap.className = "bubble " + (side === "out" ? "out" : "in");
+    wrap.textContent = text;
 
-      wrap.appendChild(meta);
-      chat.appendChild(wrap);
-      scrollToBottom();
-      return wrap;
-    }
+    const meta = document.createElement("div");
+    meta.className = "meta";
+    meta.innerHTML = `<span>${nowTime()}</span>${side === "out" ? `<span class="ticks">✓✓</span>` : ""}`;
 
-    function showTyping() {
-      if (typingEl) return typingEl;
-      const t = document.createElement("div");
-      t.className = "typing";
-      t.innerHTML = `<span>Digitando</span> <span class="dots"><span></span><span></span><span></span></span>`;
-      chat.appendChild(t);
-      typingEl = t;
-      scrollToBottom();
-      return t;
-    }
+    wrap.appendChild(meta);
+    chat.appendChild(wrap);
+    scrollToBottom();
+    return wrap;
+  }
 
-    function hideTyping() {
-      if (!typingEl) return;
-      typingEl.remove();
-      typingEl = null;
-    }
+  function showTyping() {
+    if (typingEl) return typingEl;
+    const t = document.createElement("div");
+    t.className = "typing";
+    t.innerHTML = `<span>Digitando</span> <span class="dots"><span></span><span></span><span></span></span>`;
+    chat.appendChild(t);
+    typingEl = t;
+    scrollToBottom();
+    return t;
+  }
 
-    function setSending(isSending) {
-      sendBtn.disabled = isSending;
-      input.disabled = isSending;
-    }
+  function hideTyping() {
+    if (!typingEl) return;
+    typingEl.remove();
+    typingEl = null;
+  }
 
-    function autosize() {
-      input.style.height = "auto";
-      input.style.height = Math.min(input.scrollHeight, 130) + "px";
-    }
-    input.addEventListener("input", autosize);
+  function setSending(isSending) {
+    sendBtn.disabled = isSending;
+    input.disabled = isSending;
+  }
 
-    function normalizePlan(data) {
-      // Back compat:
-      // - data.plan.items
-      // - data.responsePlan.items
-      // - data.bubbles
-      const plan = data?.plan || data?.responsePlan || null;
-      const items = plan?.items || null;
+  function autosize() {
+    input.style.height = "auto";
+    input.style.height = Math.min(input.scrollHeight, 130) + "px";
+  }
+  input.addEventListener("input", autosize);
 
-      const bubbles =
-        data?.bubbles ||
-        plan?.bubbles ||
-        (data?.reply ? [data.reply] : null);
+  function normalizePlan(data) {
+    const plan = data?.plan || data?.responsePlan || null;
+    const items = plan?.items || null;
 
-      return { plan, items, bubbles };
-    }
+    const bubbles =
+      data?.bubbles ||
+      plan?.bubbles ||
+      (data?.reply ? [data.reply] : null);
 
-    async function playResponsePlan(items, fallbackText) {
-      // se já tá tocando, não toca de novo
-      if (isPlayingPlan) return;
-      isPlayingPlan = true;
+    return { plan, items, bubbles };
+  }
 
-      try {
-        if (!Array.isArray(items) || items.length === 0) {
-          hideTyping();
-          addBubble(fallbackText || "Recebi! 😊", "in");
-          return;
-        }
+  async function playResponsePlan(items, fallbackText) {
+    if (isPlayingPlan) return;
+    isPlayingPlan = true;
 
-        for (const item of items) {
-          if (!item || typeof item !== "object") continue;
-
-          // delay antes do item, se houver
-          if (item.delayMs && item.delayMs > 0) {
-            await sleep(item.delayMs);
-          }
-
-          if (item.type === "typing") {
-            if (item.action === "start") showTyping();
-            if (item.action === "stop") hideTyping();
-            continue;
-          }
-
-          if (item.type === "text") {
-            hideTyping(); // se o backend não mandou stop, garante
-            const txt = String(item.text || "").trim();
-            if (txt) addBubble(txt, "in");
-          }
-        }
-
+    try {
+      if (!Array.isArray(items) || items.length === 0) {
         hideTyping();
-      } finally {
-        isPlayingPlan = false;
+        addBubble(fallbackText || "Recebi! 😊", "in");
+        return;
       }
-    }
 
-    async function sendMessage() {
-      const text = (input.value || "").trim();
-      if (!text) return;
+      for (const item of items) {
+        if (!item || typeof item !== "object") continue;
 
-      addBubble(text, "out");
-      input.value = "";
-      autosize();
-
-      setSending(true);
-
-      try {
-        const res = await fetch(API_URL, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            session_id: sessionId,
-            message: text,
-            channel: "landing_chat",
-            ui_mode: realModeToggle.checked ? "real" : "instant"
-          }),
-        });
-
-        if (!res.ok) throw new Error("HTTP " + res.status);
-
-        const data = await res.json();
-
-        const reply =
-          data.reply ||
-          data.text ||
-          data.message ||
-          "Recebi sua mensagem! (mas o backend não retornou 'reply')";
-
-        const { items, bubbles } = normalizePlan(data);
-
-        // ✅ Modo Instantâneo: mostra todas as bolhas de uma vez (ou o reply)
-        if (!realModeToggle.checked) {
-          hideTyping();
-          if (Array.isArray(bubbles) && bubbles.length > 0) {
-            bubbles.forEach((b) => addBubble(String(b), "in"));
-          } else {
-            addBubble(reply, "in");
-          }
-          return;
+        if (item.delayMs && item.delayMs > 0) {
+          await sleep(item.delayMs);
         }
 
-        // ✅ Modo Real: toca o plano (typing + delays + bolhas)
-        showTyping();
+        if (item.type === "typing") {
+          if (item.action === "start") showTyping();
+          if (item.action === "stop") hideTyping();
+          continue;
+        }
 
-        if (Array.isArray(items) && items.length > 0) {
+        if (item.type === "text") {
           hideTyping();
-          await playResponsePlan(items, reply);
+          const txt = String(item.text || "").trim();
+          if (txt) addBubble(txt, "in");
+        }
+      }
+
+      hideTyping();
+    } finally {
+      isPlayingPlan = false;
+    }
+  }
+
+  async function sendMessage() {
+    const text = (input.value || "").trim();
+    if (!text) return;
+
+    addBubble(text, "out");
+    input.value = "";
+    autosize();
+
+    setSending(true);
+
+    try {
+      const res = await fetch(API_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          session_id: sessionId,
+          message: text,
+          channel: "landing_chat",
+          ui_mode: realModeToggle.checked ? "real" : "instant",
+          meta: {
+            referrer: document.referrer || null,
+            page_url: window.location.href,
+            ...getUtm(),
+          },
+        }),
+      });
+
+      if (!res.ok) throw new Error("HTTP " + res.status);
+
+      const data = await res.json();
+
+      const reply =
+        data.reply ||
+        data.text ||
+        data.message ||
+        "Recebi sua mensagem! (mas o backend não retornou 'reply')";
+
+      const { items, bubbles } = normalizePlan(data);
+
+      if (!realModeToggle.checked) {
+        hideTyping();
+        if (Array.isArray(bubbles) && bubbles.length > 0) {
+          bubbles.forEach((b) => addBubble(String(b), "in"));
         } else {
-          // fallback: uma digitação rápida + reply
-          await sleep(650);
-          hideTyping();
           addBubble(reply, "in");
         }
-      } catch (err) {
+        return;
+      }
+
+      showTyping();
+
+      if (Array.isArray(items) && items.length > 0) {
         hideTyping();
-        addBubble("Ops 😅 tivemos um problema ao responder. Tente novamente.", "in");
-        console.error(err);
-      } finally {
-        setSending(false);
-        input.focus();
+        await playResponsePlan(items, reply);
+      } else {
+        await sleep(650);
+        hideTyping();
+        addBubble(reply, "in");
       }
+    } catch (err) {
+      hideTyping();
+      addBubble("Ops 😅 tivemos um problema ao responder. Tente novamente.", "in");
+      console.error(err);
+    } finally {
+      setSending(false);
+      input.focus();
     }
+  }
 
-    sendBtn.addEventListener("click", sendMessage);
+  sendBtn.addEventListener("click", sendMessage);
 
-    input.addEventListener("keydown", (e) => {
-      if (e.key === "Enter" && !e.shiftKey) {
-        e.preventDefault();
-        sendMessage();
-      }
-    });
+  input.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      sendMessage();
+    }
+  });
 
-    // Mensagem inicial
-    addBubble("Oi! Eu sou a DOCA IA 👋\nMe diga o seu tipo de negócio e o que você quer vender hoje.", "in");
-    input.focus();
-    scrollToBottom();
-  </script>
+  // ✅ Mensagem inicial mais “Landing Demo”
+  addBubble(
+    "Oi! Eu sou a DOCA IA 👋\n\nQuer ver a demo do Agente (IA emocional) e do cockpit?\nMe diz rapidinho: você quer mais leads ou atendimento/agenda mais automático?",
+    "in"
+  );
+  input.focus();
+  scrollToBottom();
+</script>
 
 </body>
 </html>

@@ -1,29 +1,33 @@
-version: "3.8"
-
 services:
   # ======================================================
-  # MCP BACKEND (MCP server / stdio) - NÃO É HTTP
-  # Só sobe quando você usar: docker compose --profile mcp up -d
+  # WAHA (WhatsApp API) - O "Ouvido"
   # ======================================================
-  mcp-backend:
-    profiles: ["mcp"]
-    build:
-      context: .
-      dockerfile: Dockerfile.mcp
-    container_name: mcp-backend
+  waha:
+    image: devlikeapro/waha:latest
+    container_name: waha
     restart: unless-stopped
+    ports:
+      - "3001:3000"
     env_file:
-      - .env
-
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
-
+      - .env.waha
+    volumes:
+      - waha_sessions:/app/.sessions
+    environment:
+      - WHATSAPP_HOOK_URL=http://mcp-webhook:3002/webhook/waha
+      - WHATSAPP_HOOK_EVENTS=message,message.any,state.change
     networks:
+      - traefik_proxy
       - mcp_internal
-
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=traefik_proxy"
+      - "traefik.http.routers.waha.rule=Host(`waha.docaperformance.com.br`)"
+      - "traefik.http.routers.waha.entrypoints=websecure"
+      - "traefik.http.routers.waha.tls.certresolver=mytlschallenge"
+      - "traefik.http.services.waha.loadbalancer.server.port=3000"
 
   # ======================================================
-  # WEBHOOK SERVER (HTTP) - AQUI FICA /api/*
+  # WEBHOOK SERVER (HTTP) - O "Cérebro"
   # ======================================================
   mcp-webhook:
     build:
@@ -34,92 +38,46 @@ services:
     command: ["node", "dist/webhook.js"]
     env_file:
       - .env
-
+    volumes:
+      - ./config:/app/config
+    environment:
+      - WAHA_BASE_URL=http://waha:3000
+      - GOOGLE_CREDENTIALS_PATH=/app/config/google-credentials.json
+      - GOOGLE_TOKEN_PATH=/app/config/google-token.json
+      - SUPABASE_URL=${SUPABASE_URL}
+      - SUPABASE_SERVICE_ROLE_KEY=${SUPABASE_SERVICE_ROLE_KEY}
     extra_hosts:
       - "host.docker.internal:host-gateway"
-
     networks:
       - traefik_proxy
       - mcp_internal
-
     expose:
       - "3002"
-
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3002/health >/dev/null 2>&1 || exit 1"]
       interval: 10s
       timeout: 3s
       retries: 10
       start_period: 15s
-
     labels:
       - "traefik.enable=true"
       - "traefik.docker.network=traefik_proxy"
-
-      # ✅ Service explícito pro webhook
       - "traefik.http.services.webhook3002.loadbalancer.server.port=3002"
 
-      # ======================================================
-      # (Opcional) API principal em subdomínio dedicado
-      # ======================================================
-      - "traefik.http.routers.mcp-api.rule=Host(`api.docaperformance.com.br`)"
-      - "traefik.http.routers.mcp-api.entrypoints=Swebsecure"
-      - "traefik.http.routers.mcp-api.tls=true"
-      - "traefik.http.routers.mcp-api.tls.certresolver=mytlschallenge"
-      - "traefik.http.routers.mcp-api.service=webhook3002"
-
-      # ======================================================
-      # Host dedicado do webhook (se você tiver esse DNS no futuro)
-      # ======================================================
       - "traefik.http.routers.mcp-webhook.rule=Host(`webhook.docaperformance.com.br`)"
-      - "traefik.http.routers.mcp-webhook.entrypoints=web,websecure"
+      - "traefik.http.routers.mcp-webhook.entrypoints=websecure"
       - "traefik.http.routers.mcp-webhook.tls=true"
       - "traefik.http.routers.mcp-webhook.tls.certresolver=mytlschallenge"
       - "traefik.http.routers.mcp-webhook.service=webhook3002"
 
-      # ======================================================
-      # WAHA webhook no mesmo host do dashboard
-      # ======================================================
-      - "traefik.http.routers.mcp-waha-webhook.rule=Host(`mcp.docaperformance.com.br`) && PathPrefix(`/webhook/`)"
-      - "traefik.http.routers.mcp-waha-webhook.entrypoints=websecure"
-      - "traefik.http.routers.mcp-waha-webhook.tls=true"
-      - "traefik.http.routers.mcp-waha-webhook.tls.certresolver=mytlschallenge"
-      - "traefik.http.routers.mcp-waha-webhook.priority=10001"
-      - "traefik.http.routers.mcp-waha-webhook.service=webhook3002"
-
-      # ======================================================
-      # ✅ API do Dashboard PROD -> WEBHOOK
-      # ======================================================
-      - "traefik.http.routers.mcp-dashboard-api.rule=Host(`mcp.docaperformance.com.br`) && PathPrefix(`/api/`)"
-      - "traefik.http.routers.mcp-dashboard-api.entrypoints=websecure"
-      - "traefik.http.routers.mcp-dashboard-api.tls=true"
-      - "traefik.http.routers.mcp-dashboard-api.tls.certresolver=mytlschallenge"
-      - "traefik.http.routers.mcp-dashboard-api.priority=10000"
-      - "traefik.http.routers.mcp-dashboard-api.service=webhook3002"
-
-      # ======================================================
-      # ✅ API do Dashboard DEV -> WEBHOOK
-      # ======================================================
-      - "traefik.http.routers.mcp-dashboard-dev-api.rule=Host(`dev.mcp.docaperformance.com.br`) && PathPrefix(`/api/`)"
-      - "traefik.http.routers.mcp-dashboard-dev-api.entrypoints=websecure"
-      - "traefik.http.routers.mcp-dashboard-dev-api.tls=true"
-      - "traefik.http.routers.mcp-dashboard-dev-api.tls.certresolver=mytlschallenge"
-      - "traefik.http.routers.mcp-dashboard-dev-api.priority=10000"
-      - "traefik.http.routers.mcp-dashboard-dev-api.service=webhook3002"
-
-      # ======================================================
-      # ✅ API do Chat -> WEBHOOK
-      # ======================================================
-      - "traefik.http.routers.mcp-chat-api.rule=Host(`chat.docaperformance.com.br`) && PathPrefix(`/api/`)"
-      - "traefik.http.routers.mcp-chat-api.entrypoints=websecure"
-      - "traefik.http.routers.mcp-chat-api.tls=true"
-      - "traefik.http.routers.mcp-chat-api.tls.certresolver=mytlschallenge"
-      - "traefik.http.routers.mcp-chat-api.priority=10000"
-      - "traefik.http.routers.mcp-chat-api.service=webhook3002"
-
+      - "traefik.http.routers.mcp-api.rule=Host(`api.docaperformance.com.br`)"
+      - "traefik.http.routers.mcp-api.entrypoints=websecure"
+      - "traefik.http.routers.mcp-api.tls=true"
+      - "traefik.http.routers.mcp-api.tls.certresolver=mytlschallenge"
+      - "traefik.http.routers.mcp-api.service=webhook3002"
 
   # ======================================================
-  # DASHBOARD PROD (NGINX)
+  # DASHBOARD & CHAT (Frontends)
   # ======================================================
   mcp-dashboard:
     build:
@@ -130,28 +88,15 @@ services:
     networks:
       - traefik_proxy
       - mcp_internal
-
     labels:
       - "traefik.enable=true"
       - "traefik.docker.network=traefik_proxy"
-
-      # Dashboard principal (HTTPS)
       - "traefik.http.routers.mcp-dashboard.rule=Host(`mcp.docaperformance.com.br`)"
       - "traefik.http.routers.mcp-dashboard.entrypoints=websecure"
       - "traefik.http.routers.mcp-dashboard.tls=true"
       - "traefik.http.routers.mcp-dashboard.tls.certresolver=mytlschallenge"
       - "traefik.http.services.mcp-dashboard.loadbalancer.server.port=80"
 
-      # HTTP -> HTTPS redirect
-      - "traefik.http.routers.mcp-dashboard-http.rule=Host(`mcp.docaperformance.com.br`)"
-      - "traefik.http.routers.mcp-dashboard-http.entrypoints=web"
-      - "traefik.http.routers.mcp-dashboard-http.middlewares=redirect-to-https"
-      - "traefik.http.middlewares.redirect-to-https.redirectscheme.scheme=https"
-
-
-  # ======================================================
-  # DASHBOARD DEV (VITE DEV SERVER)
-  # ======================================================
   mcp-dashboard-dev:
     build:
       context: ./mcp-dashboard
@@ -161,37 +106,21 @@ services:
     networks:
       - traefik_proxy
       - mcp_internal
-
     volumes:
       - ./mcp-dashboard:/app
       - /app/node_modules
-
     environment:
       - CHOKIDAR_USEPOLLING=true
       - WATCHPACK_POLLING=true
-
     labels:
       - "traefik.enable=true"
       - "traefik.docker.network=traefik_proxy"
-
-      # DEV dashboard (HTTPS)
       - "traefik.http.routers.mcp-dashboard-dev.rule=Host(`dev.mcp.docaperformance.com.br`)"
       - "traefik.http.routers.mcp-dashboard-dev.entrypoints=websecure"
       - "traefik.http.routers.mcp-dashboard-dev.tls=true"
       - "traefik.http.routers.mcp-dashboard-dev.tls.certresolver=mytlschallenge"
-      - "traefik.http.routers.mcp-dashboard-dev.priority=1"
       - "traefik.http.services.mcp-dashboard-dev.loadbalancer.server.port=5173"
 
-      # HTTP -> HTTPS redirect DEV
-      - "traefik.http.routers.mcp-dashboard-dev-http.rule=Host(`dev.mcp.docaperformance.com.br`)"
-      - "traefik.http.routers.mcp-dashboard-dev-http.entrypoints=web"
-      - "traefik.http.routers.mcp-dashboard-dev-http.middlewares=redirect-to-https"
-      - "traefik.http.middlewares.redirect-to-https.redirectscheme.scheme=https"
-
-
-  # ======================================================
-  # CHAT (NGINX)
-  # ======================================================
   mcp-chat:
     image: nginx:alpine
     container_name: mcp-chat
@@ -199,27 +128,34 @@ services:
     networks:
       - traefik_proxy
       - mcp_internal
-
     volumes:
       - ./public/chat:/usr/share/nginx/html:ro
       - ./public/chat/nginx.conf:/etc/nginx/conf.d/default.conf:ro
-
     labels:
       - "traefik.enable=true"
       - "traefik.docker.network=traefik_proxy"
-
       - "traefik.http.routers.mcp-chat.rule=Host(`chat.docaperformance.com.br`)"
       - "traefik.http.routers.mcp-chat.entrypoints=websecure"
       - "traefik.http.routers.mcp-chat.tls=true"
       - "traefik.http.routers.mcp-chat.tls.certresolver=mytlschallenge"
-      - "traefik.http.routers.mcp-chat.priority=1"
       - "traefik.http.services.mcp-chat.loadbalancer.server.port=80"
 
-      # HTTP -> HTTPS redirect Chat
-      - "traefik.http.routers.mcp-chat-http.rule=Host(`chat.docaperformance.com.br`)"
-      - "traefik.http.routers.mcp-chat-http.entrypoints=web"
-      - "traefik.http.routers.mcp-chat-http.middlewares=redirect-to-https"
+  mcp-backend:
+    profiles: ["mcp"]
+    build:
+      context: .
+      dockerfile: Dockerfile.mcp
+    container_name: mcp-backend
+    restart: unless-stopped
+    env_file:
+      - .env
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    networks:
+      - mcp_internal
 
+volumes:
+  waha_sessions:
 
 networks:
   traefik_proxy:

@@ -1,70 +1,56 @@
+// src/services/response.agent.ts
 // ============================================
 // MCP-DOCA-V2 - Response Agent
 // Agente de Respostas Inteligentes com Detecção de Emoções
-// V3: modos por intenção + ajustes por stage/emotion + multi bolhas + typing/delay
-// V3: salva chunks (bolhas + typing) no DB (message_chunks) para dashboard/replay
-// V3: humanizer config via Supabase (agent_humanizer_config) com cache TTL
+//
+// V4 - Natural Humanizer:
+// - humanizer deixa de ser "rule engine" travado
+// - IA decide conteúdo e quantidade de bolhas; humanizer só formata e simula
+// - NÃO inventa bolha 2
+// - NÃO força pergunta
+// - templates viram fallback (não sobrepõem IA)
+// - terminal detection + pós-agendamento: evita puxar conversa desnecessária
+// - memória de cenário via conversation.context.profile.has_scenario
+// - ✅ suporte channel/ui_mode/meta (landing_chat)
+// - ✅ Landing prompt + intention override
 // ============================================
-import { logger } from '../utils/logger.js';
-import { aiService } from './ai.service.js';
-import { supabaseService } from './supabase.service.js';
-import { emotionService } from './emotion.service.js';
+
+import { logger } from "../utils/logger.js";
+import { aiService } from "./ai.service.js";
+import { supabaseService } from "./supabase.service.js";
+import { emotionService } from "./emotion.service.js";
+import { calendarOrchestrator } from "./calendar/calendar.orchestrator.js";
 
 // ============================================
 // CACHE DO PROMPT (recarrega a cada 5 minutos)
 // ============================================
 let cachedPrompt: string | null = null;
 let promptLastFetch = 0;
-const PROMPT_CACHE_TTL = 5 * 60 * 1000; // 5 minutos
+const PROMPT_CACHE_TTL = 5 * 60 * 1000; // 5 min
 
 async function getPromptFromDB(): Promise<string> {
   const now = Date.now();
-  if (cachedPrompt && (now - promptLastFetch) < PROMPT_CACHE_TTL) {
+
+  if (cachedPrompt && now - promptLastFetch < PROMPT_CACHE_TTL) {
     return cachedPrompt;
   }
+
   try {
-    const result: any = await supabaseService.request('GET', 'settings', {
-      query: 'key=eq.agent_prompt'
+    const result: any = await supabaseService.request("GET", "settings", {
+      query: "key=eq.agent_prompt",
     });
+
     if (result && result[0]?.value) {
-      cachedPrompt = result[0].value;
+      cachedPrompt = typeof result[0].value === "string" ? result[0].value : String(result[0].value);
       promptLastFetch = now;
-      logger.info('Prompt carregado do Supabase', undefined, 'AGENT');
+      logger.info("Prompt carregado do Supabase", undefined, "AGENT");
       return cachedPrompt;
     }
+  } catch (error) {
+    logger.error("Erro ao buscar prompt do Supabase", error, "AGENT");
   }
-  catch (error) {
-    logger.error('Erro ao buscar prompt do Supabase', error, 'AGENT');
-  }
+
   return DOUGLAS_SYSTEM_PROMPT;
-}
-
-// Buscar FAQs relevantes da base de conhecimento
-async function getRelevantFAQs(userMessage: string): Promise<string> {
-  if (!userMessage) return '';
-  try {
-    const result: any = await supabaseService.request('GET', 'knowledge_base', {
-      query: 'active=is.true&order=priority.desc'
-    });
-    if (!result || result.length === 0) return '';
-    const msgLower = userMessage.toLowerCase();
-    const relevantFaqs = result.filter((faq: any) => {
-      if (!faq.keywords || faq.keywords.length === 0) return false;
-      return faq.keywords.some((kw: string) => msgLower.includes(kw.toLowerCase()));
-    }).slice(0, 3);
-
-    if (relevantFaqs.length === 0) return '';
-
-    let faqText = '\n\n---\n## 📚 BASE DE CONHECIMENTO RELEVANTE\n';
-    relevantFaqs.forEach((faq: any) => {
-      faqText += `\n**P:** ${faq.question}\n**R:** ${faq.answer}\n`;
-    });
-    return faqText;
-  }
-  catch (error) {
-    logger.error('Erro ao buscar FAQs', error, 'AGENT');
-    return '';
-  }
 }
 
 export function reloadPrompt(): void {
@@ -73,29 +59,71 @@ export function reloadPrompt(): void {
 }
 
 // ============================================
-// HUMANIZER CONFIG VIA SUPABASE (V3)
+// Buscar FAQs relevantes da base de conhecimento
 // ============================================
-type Intention =
-  | 'primeiro_contato'
-  | 'cliente_bravo'
-  | 'orcamento'
-  | 'agendamento'
-  | 'curiosidade'
-  | 'outros';
+async function getRelevantFAQs(userMessage: string): Promise<string> {
+  if (!userMessage) return "";
+
+  try {
+    const result: any = await supabaseService.request("GET", "knowledge_base", {
+      query: "active=is.true&order=priority.desc",
+    });
+
+    if (!result || result.length === 0) return "";
+
+    const msgLower = userMessage.toLowerCase();
+
+    const relevantFaqs = result
+      .filter((faq: any) => {
+        if (!faq.keywords || faq.keywords.length === 0) return false;
+        return faq.keywords.some((kw: string) => msgLower.includes(String(kw).toLowerCase()));
+      })
+      .slice(0, 3);
+
+    if (relevantFaqs.length === 0) return "";
+
+    let faqText = "\n\n---\n## 📚 BASE DE CONHECIMENTO RELEVANTE\n";
+    relevantFaqs.forEach((faq: any) => {
+      faqText += `\n**P:** ${faq.question}\n**R:** ${faq.answer}\n`;
+    });
+
+    return faqText;
+  } catch (error) {
+    logger.error("Erro ao buscar FAQs", error, "AGENT");
+    return "";
+  }
+}
+
+// ============================================
+// HUMANIZER CONFIG VIA SUPABASE (V4 NATURAL)
+// ============================================
+
+export type Intention =
+  | "primeiro_contato"
+  | "cliente_bravo"
+  | "orcamento"
+  | "agendamento"
+  | "curiosidade"
+  | "outros";
 
 type ResponseMode =
-  | 'SINGLE'
-  | 'TWO_BUBBLES'
-  | 'BRAVO'
-  | 'BUDGET'
-  | 'FIRST_CONTACT'
-  | 'SKEPTICAL'
-  | 'HOT_CTA';
+  | "SINGLE"
+  | "TWO_BUBBLES"
+  | "BRAVO"
+  | "BUDGET"
+  | "FIRST_CONTACT"
+  | "SKEPTICAL"
+  | "HOT_CTA";
 
 type HumanizerConfig = {
+  // caps suaves
   maxBubbles: number;
   maxSentencesPerBubble: number;
   maxEmojiPerBubble: number;
+
+  // controle de chunking
+  bubbleCharSoftLimit: number;
+  bubbleCharHardLimit: number;
 
   delay: {
     base: number;
@@ -109,41 +137,53 @@ type HumanizerConfig = {
   };
 
   stageBehavior: Record<
-    'cold' | 'warm' | 'hot',
-    { maxBubbles: number; requireQuestion: boolean; ctaLevel: 'soft' | 'medium' | 'hard' }
+    "cold" | "warm" | "hot",
+    {
+      maxBubbles: number;
+      requireQuestion: boolean; // (mantido por compatibilidade, mas agora default=false)
+      ctaLevel: "soft" | "medium" | "hard";
+    }
   >;
 
   saveChunksToDB: boolean;
   saveTypingChunks: boolean;
 
+  // templates agora são FALLBACK (não substituem IA)
   intentModes: Record<
-    'primeiro_contato' | 'cliente_bravo' | 'orcamento',
-    { templates: [string, string] }
+    "primeiro_contato" | "cliente_bravo" | "orcamento",
+    {
+      templates?: [string, string];
+      variants?: string[][];
+    }
   >;
 };
 
 type AgentHumanizerPayload = { humanizer?: Partial<HumanizerConfig> };
 
 const DEFAULT_HUMANIZER_CONFIG: HumanizerConfig = {
-  maxBubbles: 2,
-  maxSentencesPerBubble: 2,
-  maxEmojiPerBubble: 1,
+  // ✅ bem mais natural / solto
+  maxBubbles: 5,
+  maxSentencesPerBubble: 4,
+  maxEmojiPerBubble: 3,
+
+  bubbleCharSoftLimit: 220,
+  bubbleCharHardLimit: 420,
 
   delay: {
-    base: 450,
-    perChar: 18,
-    cap: 1750,
+    base: 420,
+    perChar: 14,
+    cap: 1650,
 
-    anxiousMultiplier: 0.6,
+    anxiousMultiplier: 0.65,
     skepticalMultiplier: 1.15,
     frustratedMultiplier: 1.0,
     excitedMultiplier: 0.9,
   },
 
   stageBehavior: {
-    cold: { maxBubbles: 2, requireQuestion: true, ctaLevel: 'soft' },
-    warm: { maxBubbles: 2, requireQuestion: true, ctaLevel: 'medium' },
-    hot: { maxBubbles: 2, requireQuestion: true, ctaLevel: 'hard' },
+    cold: { maxBubbles: 4, requireQuestion: false, ctaLevel: "soft" },
+    warm: { maxBubbles: 5, requireQuestion: false, ctaLevel: "medium" },
+    hot: { maxBubbles: 5, requireQuestion: false, ctaLevel: "hard" },
   },
 
   saveChunksToDB: true,
@@ -152,20 +192,30 @@ const DEFAULT_HUMANIZER_CONFIG: HumanizerConfig = {
   intentModes: {
     primeiro_contato: {
       templates: [
-        'Oi! 👋 Prazer, sou o Douglas da DOCA.',
-        'Me conta rapidinho: você tá buscando melhorar marketing, vendas ou operação?'
+        "Oi! 👋 Prazer, sou o Douglas da DOCA.",
+        "Me conta rapidinho: você quer melhorar marketing, vendas ou operação?",
+      ],
+      variants: [
+        ["Show! 😄", "Me conta rapidinho: hoje o seu problema é mais gerar mais leads ou deixar o atendimento redondinho?"],
+        ["Opa! Douglas aqui 😄", "Hoje você tá buscando mais leads ou automatizar o atendimento/agenda?"],
+        ["Boa! 👋", "Qual tá pegando mais aí hoje: trazer mais leads ou organizar o atendimento?"],
+        ["Fechado 😄", "Me diz em 1 frase: sua prioridade hoje é lead ou atendimento/agenda?"],
       ],
     },
     cliente_bravo: {
-      templates: [
-        'Poxa… entendi. Sinto muito por isso 🙏',
-        'Me diz o que aconteceu (e o número/contato) que eu já resolvo pra você agora.'
+      templates: ["Poxa… entendi. Sinto muito por isso 🙏", "Me diz o que aconteceu (e o número/contato) que eu resolvo agora."],
+      variants: [
+        ["Poxa… entendi 😕", "Me conta rapidinho o que aconteceu pra eu resolver agora."],
+        ["Caramba… sinto muito por isso 🙏", "Você consegue me dizer o que deu errado pra eu corrigir já?"],
+        ["Entendi 😕", "Me passa o detalhe (e se tiver print) que eu resolvo aqui contigo."],
       ],
     },
     orcamento: {
-      templates: [
-        'Consigo sim 😊 Só pra eu te passar certinho:',
-        'é pra você ou pra equipe? E qual objetivo principal (mais leads, conversão ou atendimento)?'
+      templates: ["Consigo sim 😊 Só pra eu te passar certinho:", "é pra você ou pra equipe? E qual objetivo principal (leads, conversão ou atendimento)?"],
+      variants: [
+        ["Consigo sim 😊", "Só pra eu te passar certinho: é pra você ou pra equipe? E qual objetivo principal?"],
+        ["Bora! 😄", "Antes de falar de valor, me diz: seu foco é mais leads, conversão ou atendimento?"],
+        ["Fechado 😊", "Me conta rapidinho seu cenário e meta principal que eu te passo o melhor caminho."],
       ],
     },
   },
@@ -174,18 +224,16 @@ const DEFAULT_HUMANIZER_CONFIG: HumanizerConfig = {
 function safeJsonParse<T>(val: any, fallback: T): T {
   try {
     if (!val) return fallback;
-    if (typeof val === 'string') return JSON.parse(val) as T;
+    if (typeof val === "string") return JSON.parse(val) as T;
     return val as T;
   } catch {
     return fallback;
   }
 }
 
-function mergeHumanizerConfig(
-  base: HumanizerConfig,
-  incoming?: Partial<HumanizerConfig> | null
-): HumanizerConfig {
-  const inc = incoming || {};
+function mergeHumanizerConfig(base: HumanizerConfig, incoming?: Partial<HumanizerConfig> | null): HumanizerConfig {
+  const inc = incoming || ({} as Partial<HumanizerConfig>);
+
   return {
     ...base,
     ...inc,
@@ -204,18 +252,19 @@ function mergeHumanizerConfig(
     intentModes: {
       primeiro_contato: {
         templates:
-          ((inc as any).intentModes?.primeiro_contato?.templates as any) ||
-          base.intentModes.primeiro_contato.templates,
+          ((inc as any).intentModes?.primeiro_contato?.templates as any) || base.intentModes.primeiro_contato.templates,
+        variants:
+          ((inc as any).intentModes?.primeiro_contato?.variants as any) || base.intentModes.primeiro_contato.variants,
       },
       cliente_bravo: {
         templates:
-          ((inc as any).intentModes?.cliente_bravo?.templates as any) ||
-          base.intentModes.cliente_bravo.templates,
+          ((inc as any).intentModes?.cliente_bravo?.templates as any) || base.intentModes.cliente_bravo.templates,
+        variants:
+          ((inc as any).intentModes?.cliente_bravo?.variants as any) || base.intentModes.cliente_bravo.variants,
       },
       orcamento: {
-        templates:
-          ((inc as any).intentModes?.orcamento?.templates as any) ||
-          base.intentModes.orcamento.templates,
+        templates: ((inc as any).intentModes?.orcamento?.templates as any) || base.intentModes.orcamento.templates,
+        variants: ((inc as any).intentModes?.orcamento?.variants as any) || base.intentModes.orcamento.variants,
       },
     },
   };
@@ -229,76 +278,19 @@ const HUMANIZER_CACHE_TTL = 5 * 60 * 1000; // 5 min
 export function reloadHumanizerConfig(): void {
   cachedHumanizer = null;
   humanizerLastFetch = 0;
-  logger.info('Humanizer config cache cleared', undefined, 'AGENT');
+  logger.info("Humanizer config cache cleared", undefined, "AGENT");
 }
 
 async function getHumanizerConfigFromDB(): Promise<HumanizerConfig> {
   const now = Date.now();
 
-  if (cachedHumanizer && (now - humanizerLastFetch) < HUMANIZER_CACHE_TTL) {
+  if (cachedHumanizer && now - humanizerLastFetch < HUMANIZER_CACHE_TTL) {
     return cachedHumanizer;
   }
 
   try {
-    const result: any = await supabaseService.request('GET', 'settings', {
-      query: 'key=eq.agent_humanizer_config'
-    });
-
-    // ⚠️ nosso settings usa key custom; na tua API era GET /api/settings?key=...
-    // mas aqui estamos indo direto no Supabase REST. Então key precisa bater.
-    // Se você preferir manter "agent_humanizer_config", troque a linha acima por:
-    // query: 'key=eq.agent_humanizer_config'
-
-    // O correto (como combinamos na aba):
-    // key = agent_humanizer_config
-    // então vamos validar e fallback:
-    if (!result || !result[0]?.value) {
-      // tenta pelo nome sem agent_
-      const result2: any = await supabaseService.request('GET', 'settings', {
-        query: 'key=eq.agent_humanizer_config'
-      });
-
-      if (!result2 || !result2[0]?.value) {
-        cachedHumanizer = DEFAULT_HUMANIZER_CONFIG;
-        humanizerLastFetch = now;
-        return cachedHumanizer;
-      }
-
-      const parsed2 = safeJsonParse<AgentHumanizerPayload>(result2[0].value, {});
-      cachedHumanizer = mergeHumanizerConfig(DEFAULT_HUMANIZER_CONFIG, parsed2?.humanizer || {});
-      humanizerLastFetch = now;
-      logger.info('Humanizer config carregado do Supabase (agent_humanizer_config)', undefined, 'AGENT');
-      return cachedHumanizer;
-    }
-
-    const parsed = safeJsonParse<AgentHumanizerPayload>(result[0].value, {});
-    cachedHumanizer = mergeHumanizerConfig(DEFAULT_HUMANIZER_CONFIG, parsed?.humanizer || {});
-    humanizerLastFetch = now;
-
-    logger.info('Humanizer config carregado do Supabase (agent_humanizer_config)', undefined, 'AGENT');
-    return cachedHumanizer;
-
-  } catch (error) {
-    logger.error('Erro ao buscar humanizer config do Supabase', error, 'AGENT');
-    cachedHumanizer = DEFAULT_HUMANIZER_CONFIG;
-    humanizerLastFetch = now;
-    return cachedHumanizer;
-  }
-}
-
-// ⚠️ Ajuste definitivo: como na aba usamos "agent_humanizer_config",
-// eu recomendo você manter esse key único.
-// Vamos fixar de vez o query correto:
-async function getHumanizerConfigFromDB_FIXED(): Promise<HumanizerConfig> {
-  const now = Date.now();
-
-  if (cachedHumanizer && (now - humanizerLastFetch) < HUMANIZER_CACHE_TTL) {
-    return cachedHumanizer;
-  }
-
-  try {
-    const result: any = await supabaseService.request('GET', 'settings', {
-      query: 'key=eq.agent_humanizer_config'
+    const result: any = await supabaseService.request("GET", "settings", {
+      query: "key=eq.agent_humanizer_config",
     });
 
     if (!result || !result[0]?.value) {
@@ -308,13 +300,15 @@ async function getHumanizerConfigFromDB_FIXED(): Promise<HumanizerConfig> {
     }
 
     const parsed = safeJsonParse<AgentHumanizerPayload>(result[0].value, {});
-    cachedHumanizer = mergeHumanizerConfig(DEFAULT_HUMANIZER_CONFIG, parsed?.humanizer || {});
+    const incoming = parsed?.humanizer || {};
+
+    cachedHumanizer = mergeHumanizerConfig(DEFAULT_HUMANIZER_CONFIG, incoming);
     humanizerLastFetch = now;
 
-    logger.info('Humanizer config carregado do Supabase', undefined, 'AGENT');
+    logger.info("Humanizer config carregado do Supabase", undefined, "AGENT");
     return cachedHumanizer;
   } catch (error) {
-    logger.error('Erro ao buscar humanizer config do Supabase', error, 'AGENT');
+    logger.error("Erro ao buscar humanizer config do Supabase", error, "AGENT");
     cachedHumanizer = DEFAULT_HUMANIZER_CONFIG;
     humanizerLastFetch = now;
     return cachedHumanizer;
@@ -322,83 +316,203 @@ async function getHumanizerConfigFromDB_FIXED(): Promise<HumanizerConfig> {
 }
 
 // ============================================
-// SISTEMA DE DETECÇÃO DE EMOÇÕES (HEURÍSTICO)
+// ✅ Anti-repetição helpers
+// ============================================
+
+function normalizeText(t: string): string {
+  return String(t || "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .toLowerCase();
+}
+
+function isTerminalMessage(text: string): boolean {
+  const t = normalizeText(text);
+
+  const patterns = [
+    /confirmad[oa]/i,
+    /agendad[oa]/i,
+    /marquei/i,
+    /convite enviado/i,
+    /nos vemos/i,
+    /até (já|logo)/i,
+    /segue (o|a)/i,
+    /aqui est(á|a)/i,
+    /\blink\b/i,
+    /google meet/i,
+    /meet:/i,
+    /zoom/i,
+    /calendar/i,
+    /evento criado/i,
+  ];
+
+  return patterns.some((p) => p.test(t));
+}
+
+function textHasQuestion(text: string): boolean {
+  const t = String(text || "").trim();
+  if (!t) return false;
+  if (t.includes("?")) return true;
+  return /(me diz|me fala|você quer|qual|quando|onde|como|quanto|topa|bora)/i.test(t);
+}
+
+function safeGetConversationContext(conversation: any): any {
+  const ctx = conversation?.context;
+  if (!ctx) return {};
+  if (typeof ctx === "string") {
+    try {
+      return JSON.parse(ctx);
+    } catch {
+      return {};
+    }
+  }
+  if (typeof ctx === "object") return ctx;
+  return {};
+}
+
+async function safeUpdateConversationContext(conversationId: string, nextContext: any): Promise<void> {
+  const fn = (supabaseService as any)?.updateConversationContext;
+  if (typeof fn === "function") {
+    await fn(conversationId, nextContext);
+    return;
+  }
+
+  try {
+    await supabaseService.request("PATCH", "conversations", {
+      query: `id=eq.${conversationId}`,
+      body: { context: nextContext },
+    } as any);
+  } catch {
+    // não quebra o fluxo
+  }
+}
+
+// ============================================
+// DETECÇÃO DE EMOÇÕES (HEURÍSTICO)
 // ============================================
 const EMOTION_PATTERNS = {
   skeptical: {
     pattern: /duvido|será|não acredito|mentira|enganação|furada|falso|golpe|spam|bot|robô/i,
-    style: 'Validar preocupação, mostrar transparência, evitar exageros, oferecer prova social leve',
+    style: "Validar preocupação, ser transparente, oferecer exemplo real",
   },
   anxious: {
     pattern: /urgente|rápido|agora|hoje|já|pressa|correndo|preciso muito|desesperado/i,
-    style: 'Transmitir calma, dizer o próximo passo, mostrar que vai resolver',
+    style: "Transmitir calma, dizer o próximo passo e resolver",
   },
   frustrated: {
     pattern: /desisto|cansado|nada funciona|difícil|complicado|chato|irritado|problema|não aguento/i,
-    style: 'Empatia genuína, reconhecer a dor, oferecer solução concreta',
+    style: "Empatia genuína, reconhecer a dor, solução concreta",
   },
   excited: {
     pattern: /quero|vamos|ótimo|perfeito|maravilha|top|bora|show|incrível|massa|demais/i,
-    style: 'Manter energia, acelerar processo, aproveitar o momento',
+    style: "Manter energia e acelerar processo",
   },
   price_sensitive: {
     pattern: /caro|valor|preço|quanto custa|custo|pagar|dinheiro|grana|investimento|orçamento/i,
-    style: 'Focar em ROI e valor, sem passar valores por mensagem, pedir contexto antes',
+    style: "Focar em valor/ROI, sem passar preço por mensagem, pedir contexto",
   },
   ready: {
     pattern: /agendar|marcar|quando|horário|dia|disponível|vamos fazer|fechar|contratar/i,
-    style: 'Ir direto ao agendamento, não enrolar, capturar compromisso',
+    style: "Ir direto ao agendamento, sem enrolar",
   },
   curious: {
     pattern: /como funciona|o que é|explica|me conta|quero saber|entender|conhecer/i,
-    style: 'Explicar simples, usar exemplos, despertar interesse',
+    style: "Explicar simples, usar exemplo, despertar interesse",
   },
 };
 
-function detectEmotion(message: string): { emotion: string; style: string } {
-  const msg = (message || '').toLowerCase();
+export function detectEmotion(message: string): { emotion: string; style: string } {
+  const msg = (message || "").toLowerCase();
+
   for (const [emotion, config] of Object.entries(EMOTION_PATTERNS)) {
     if ((config as any).pattern.test(msg)) {
       return { emotion, style: (config as any).style };
     }
   }
-  return { emotion: 'neutral', style: 'Descobrir mais sobre a pessoa, fazer perguntas abertas' };
+
+  return { emotion: "neutral", style: "Descobrir mais sobre a pessoa, fazer perguntas abertas" };
 }
 
 // ============================================
-// DETECÇÃO DE INTENÇÃO (HEURÍSTICA) - V2
+// DETECÇÃO DE INTENÇÃO (HEURÍSTICA)
 // ============================================
 const INTENTION_PATTERNS: Record<Intention, RegExp> = {
   primeiro_contato: /oi|olá|e aí|bom dia|boa tarde|boa noite|tudo bem|quem é|prazer|primeira vez|conheci|vim do/i,
-  cliente_bravo: /reclama|insatisfeito|péssimo|horrível|não gostei|não funciona|problema|quero cancelar|raiva|irritado|enganado|golpe|suporte/i,
+  cliente_bravo:
+    /reclama|insatisfeito|péssimo|horrível|não gostei|não funciona|problema|quero cancelar|raiva|irritado|enganado|golpe|suporte/i,
   orcamento: /preço|valor|quanto custa|orçamento|plano|investimento|mensalidade|quanto fica|cotação/i,
   agendamento: /agendar|marcar|reunião|call|quando|horário|dia|agenda|disponível/i,
   curiosidade: /como funciona|o que é|explica|me conta|quero saber|entender|conhecer/i,
-  outros: /.^/
+  outros: /.^/,
 };
 
-function detectIntention(message: string, emotion: string): Intention {
-  const msg = (message || '').toLowerCase();
+export function detectIntention(message: string, emotion: string): Intention {
+  const msg = (message || "").toLowerCase();
 
-  if (emotion === 'frustrated' || emotion === 'skeptical') {
-    if (INTENTION_PATTERNS.cliente_bravo.test(msg)) return 'cliente_bravo';
+  if ((emotion === "frustrated" || emotion === "skeptical") && INTENTION_PATTERNS.cliente_bravo.test(msg)) {
+    return "cliente_bravo";
   }
 
-  if (INTENTION_PATTERNS.orcamento.test(msg)) return 'orcamento';
-  if (INTENTION_PATTERNS.agendamento.test(msg)) return 'agendamento';
-  if (INTENTION_PATTERNS.curiosidade.test(msg)) return 'curiosidade';
-  if (INTENTION_PATTERNS.primeiro_contato.test(msg)) return 'primeiro_contato';
-  if (INTENTION_PATTERNS.cliente_bravo.test(msg)) return 'cliente_bravo';
+  if (INTENTION_PATTERNS.orcamento.test(msg)) return "orcamento";
+  if (INTENTION_PATTERNS.agendamento.test(msg)) return "agendamento";
+  if (INTENTION_PATTERNS.curiosidade.test(msg)) return "curiosidade";
+  if (INTENTION_PATTERNS.primeiro_contato.test(msg)) return "primeiro_contato";
+  if (INTENTION_PATTERNS.cliente_bravo.test(msg)) return "cliente_bravo";
 
-  return 'outros';
+  return "outros";
 }
 
 // ============================================
-// HUMANIZAÇÃO: MESSAGE PLAN + STAGE/EMOTION MODES + CHUNKS
+// ✅ LANDING OVERRIDES
+// ============================================
+
+function overrideIntentionForLanding(message: string, current: Intention): Intention {
+  const m = normalizeText(message);
+
+  if (/(agendar|marcar|reuni(ã|a)o|call|hor(a|á)rio|agenda|dispon(í|i)vel)/i.test(m)) return "agendamento";
+  if (/(pre(ç|c)o|valor|quanto custa|or(ç|c)amento|plano|investimento)/i.test(m)) return "orcamento";
+  if (/(quero saber mais|como funciona|o que (é|e)|me explica|agente de ia|ia|intelig(ê|e)ncia artificial)/i.test(m))
+    return "curiosidade";
+  if (/(^oi$|^ol(a|á)$|bom dia|boa tarde|boa noite|tudo bem)/i.test(m)) return "primeiro_contato";
+
+  return current;
+}
+
+function buildLandingSystemPrompt(basePrompt: string, meta?: Record<string, any>): string {
+  const utmSource = meta?.utm_source ? String(meta.utm_source) : null;
+  const utmCampaign = meta?.utm_campaign ? String(meta.utm_campaign) : null;
+  const adName = meta?.ad_name ? String(meta.ad_name) : null;
+
+  let prompt = basePrompt;
+
+  prompt += `\n\n---\n## ✅ CONTEXTO (LANDING PAGE)\n`;
+  prompt += `Você está falando com um lead que veio de uma Landing Page sobre **Agente de IA para WhatsApp**.\n`;
+  prompt += `Objetivo: qualificar rápido e levar para demo (30min).\n`;
+  prompt += `Produto: Agente de IA que atende, qualifica, agenda, e organiza tudo no cockpit (funil/temperatura/seguimento).\n`;
+
+  if (utmSource || utmCampaign || adName) {
+    prompt += `\n\n**Origem do lead (meta):**\n`;
+    if (utmSource) prompt += `- utm_source: ${utmSource}\n`;
+    if (utmCampaign) prompt += `- utm_campaign: ${utmCampaign}\n`;
+    if (adName) prompt += `- ad_name: ${adName}\n`;
+  }
+
+  prompt += `\n\n**Regras específicas (Landing):**\n`;
+  prompt += `- Seja MUITO direto e objetivo\n`;
+  prompt += `- Foque no Agente de IA para WhatsApp: atendimento, qualificação, agendamento e cockpit\n`;
+  prompt += `- Sempre puxe para 1 de 2 caminhos: (1) Leads/Vendas ou (2) Atendimento/Suporte\n`;
+  prompt += `- Emojis com moderação (não force)\n`;
+  prompt += `- Não invente perguntas: só pergunte se fizer sentido\n`;
+
+  return prompt;
+}
+
+// ============================================
+// HUMANIZAÇÃO: RESPONSE PLAN + BOLHAS + TYPING (NATURAL)
 // ============================================
 type MessagePlanItem =
-  | { type: 'typing'; action: 'start' | 'stop'; delayMs: number }
-  | { type: 'text'; text: string; delayMs: number };
+  | { type: "typing"; action: "start" | "stop"; delayMs: number }
+  | { type: "text"; text: string; delayMs: number };
 
 type MessagePlan = {
   items: MessagePlanItem[];
@@ -416,55 +530,54 @@ function clamp(n: number, min: number, max: number): number {
 }
 
 function normalizeWhitespace(text: string): string {
-  return String(text || '')
-    .replace(/\r/g, '')
-    .replace(/[ \t]+\n/g, '\n')
-    .replace(/\n{3,}/g, '\n\n')
-    .replace(/[ \t]{2,}/g, ' ')
+  return String(text || "")
+    .replace(/\r/g, "")
+    .replace(/[ \t]+\n/g, "\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .replace(/[ \t]{2,}/g, " ")
     .trim();
 }
 
 function splitIntoSentences(text: string): string[] {
   const t = normalizeWhitespace(text);
   if (!t) return [];
-  const parts = t.split(/(?<=[.!?])\s+/).map(p => p.trim()).filter(Boolean);
+  const parts = t
+    .split(/(?<=[.!?])\s+/)
+    .map((p) => p.trim())
+    .filter(Boolean);
   return parts.length ? parts : [t];
 }
 
-function stripTooManyEmojis(text: string, maxEmojis = 1): string {
+function stripTooManyEmojis(text: string, maxEmojis = 3): string {
   const emojiRegex = /[\p{Emoji_Presentation}\p{Extended_Pictographic}]/gu;
   const matches = text.match(emojiRegex) || [];
   if (matches.length <= maxEmojis) return text;
 
   let removeCount = matches.length - maxEmojis;
-  return text.replace(emojiRegex, (m) => {
-    if (removeCount <= 0) return m;
-    removeCount--;
-    return '';
-  }).replace(/\s{2,}/g, ' ').trim();
+  return text
+    .replace(emojiRegex, (m) => {
+      if (removeCount <= 0) return m;
+      removeCount--;
+      return "";
+    })
+    .replace(/\s{2,}/g, " ")
+    .trim();
 }
 
-function ensureQuestionAtEnd(text: string, fallbackQuestion: string): string {
-  const t = (text || '').trim();
-  if (!t) return fallbackQuestion;
-  if (t.includes('?')) return t;
-  return `${t}\n\n${fallbackQuestion}`;
-}
-
-function normalizeStage(stage: string): 'cold' | 'warm' | 'hot' | 'unknown' {
-  const s = String(stage || '').toLowerCase();
-  if (s.includes('cold')) return 'cold';
-  if (s.includes('warm')) return 'warm';
-  if (s.includes('hot')) return 'hot';
-  return 'unknown';
+function normalizeStage(stage: string): "cold" | "warm" | "hot" | "unknown" {
+  const s = String(stage || "").toLowerCase();
+  if (s.includes("cold")) return "cold";
+  if (s.includes("warm")) return "warm";
+  if (s.includes("hot")) return "hot";
+  return "unknown";
 }
 
 function emotionDelayMultiplier(emotion: string, cfg: any): number {
-  const e = String(emotion || '').toLowerCase();
-  if (e === 'anxious') return cfg?.anxiousMultiplier ?? 0.6;
-  if (e === 'skeptical') return cfg?.skepticalMultiplier ?? 1.15;
-  if (e === 'frustrated') return cfg?.frustratedMultiplier ?? 1.0;
-  if (e === 'excited') return cfg?.excitedMultiplier ?? 0.9;
+  const e = String(emotion || "").toLowerCase();
+  if (e === "anxious") return cfg?.anxiousMultiplier ?? 0.65;
+  if (e === "skeptical") return cfg?.skepticalMultiplier ?? 1.15;
+  if (e === "frustrated") return cfg?.frustratedMultiplier ?? 1.0;
+  if (e === "excited") return cfg?.excitedMultiplier ?? 0.9;
   return 1.0;
 }
 
@@ -473,7 +586,7 @@ function calcDelayMs(
   cfg: { base: number; perChar: number; cap: number },
   multiplier = 1.0
 ): number {
-  const t = (text || '').trim();
+  const t = (text || "").trim();
   if (!t) return Math.round(cfg.base * multiplier);
 
   const raw = cfg.base + t.length * cfg.perChar;
@@ -481,111 +594,143 @@ function calcDelayMs(
   return Math.round(clamped * multiplier);
 }
 
+// ✅ RANDOM helpers
+function pickRandom<T>(arr: T[], fallback: T): T {
+  if (!Array.isArray(arr) || arr.length === 0) return fallback;
+  return arr[Math.floor(Math.random() * arr.length)];
+}
+
+function pickIntentVariant(
+  hz: HumanizerConfig,
+  key: "primeiro_contato" | "cliente_bravo" | "orcamento"
+): [string, string] {
+  const mode = hz.intentModes?.[key];
+
+  const fallback: [string, string] =
+    (mode?.templates as [string, string]) || ["Oi! 👋", "Me conta rapidinho: qual sua meta principal hoje?"];
+
+  const variants = Array.isArray(mode?.variants) ? mode?.variants : [];
+  const picked = pickRandom<string[]>(variants, fallback as any);
+
+  const b1 = String(picked?.[0] || fallback[0]).trim();
+  const b2 = String(picked?.[1] || fallback[1]).trim();
+
+  return [b1 || fallback[0], b2 || fallback[1]];
+}
+
 function pickModeV2(intention: Intention, emotion: string, stage: string): ResponseMode {
   const st = normalizeStage(stage);
-  const e = String(emotion || '').toLowerCase();
+  const e = String(emotion || "").toLowerCase();
 
-  if (intention === 'primeiro_contato') return 'FIRST_CONTACT';
-  if (intention === 'cliente_bravo') return 'BRAVO';
-  if (intention === 'orcamento') return 'BUDGET';
+  // mantém compatibilidade mas agora são "tendências", não regras duras
+  if (intention === "primeiro_contato") return "FIRST_CONTACT";
+  if (intention === "cliente_bravo") return "BRAVO";
+  if (intention === "orcamento") return "BUDGET";
 
-  if (st === 'hot') return 'HOT_CTA';
-  if (e === 'skeptical') return 'SKEPTICAL';
-  if (e === 'anxious' || intention === 'agendamento') return 'SINGLE';
+  if (st === "hot") return "HOT_CTA";
+  if (e === "skeptical") return "SKEPTICAL";
+  if (e === "anxious" || intention === "agendamento") return "SINGLE";
 
-  return 'TWO_BUBBLES';
+  return "TWO_BUBBLES";
 }
 
-function buildBubblesFromAIText(aiText: string, mode: ResponseMode, hz: HumanizerConfig): string[] {
+/**
+ * ✅ HUMANIZER NATURAL
+ * - Se IA separou em parágrafos, respeita como bolhas
+ * - Se veio tudo junto, quebra em chunks suaves por sentenças/tamanho
+ * - NÃO inventa conteúdo
+ * - Templates só entram como fallback quando IA veio curta/ruim
+ */
+function buildBubblesFromAITextNatural(
+  aiText: string,
+  hz: HumanizerConfig,
+  opts?: { allowFallbackTemplates?: boolean; fallbackTemplates?: [string, string] | null }
+): string[] {
   const cleaned = normalizeWhitespace(aiText);
-  if (!cleaned) return ['Perfeito! Me conta rapidinho: qual seu objetivo hoje? 😊'];
-
-  // Templates por intenção/mode
-  if (mode === 'FIRST_CONTACT') return hz.intentModes.primeiro_contato.templates.slice(0, 2);
-  if (mode === 'BRAVO') return hz.intentModes.cliente_bravo.templates.slice(0, 2);
-  if (mode === 'BUDGET') return hz.intentModes.orcamento.templates.slice(0, 2);
-
-  if (mode === 'SKEPTICAL') {
-    return [
-      'Totalmente justo desconfiar.',
-      'Se você quiser, eu te mando um exemplo real rapidinho — quer ver?'
-    ];
+  if (!cleaned) {
+    const fb = opts?.fallbackTemplates;
+    if (opts?.allowFallbackTemplates && fb) return [fb[0], fb[1]].filter(Boolean);
+    return ["Perfeito. 😊"];
   }
 
-  if (mode === 'HOT_CTA') {
-    return [
-      'Fechado! 🚀',
-      'Bora marcar 15 min pra eu te mostrar o caminho? Hoje ou amanhã?'
-    ];
+  // respeita parágrafos
+  const paragraphs = cleaned
+    .split(/\n\s*\n+/)
+    .map((p) => p.trim())
+    .filter(Boolean);
+
+  let raw: string[] = [];
+
+  if (paragraphs.length >= 2) {
+    raw = paragraphs;
+  } else {
+    // quebra por sentenças e limite suave
+    const sentences = splitIntoSentences(cleaned);
+    let current = "";
+
+    for (const s of sentences) {
+      const next = (current ? current + " " : "") + s;
+
+      if (next.length > hz.bubbleCharSoftLimit && current) {
+        raw.push(current.trim());
+        current = s;
+      } else {
+        current = next;
+      }
+
+      // hard stop por segurança
+      if (current.length > hz.bubbleCharHardLimit) {
+        raw.push(current.trim());
+        current = "";
+      }
+    }
+
+    if (current.trim()) raw.push(current.trim());
   }
 
-  const sentences = splitIntoSentences(cleaned);
+  raw = raw.map((b) => stripTooManyEmojis(b, hz.maxEmojiPerBubble)).filter(Boolean);
 
-  if (mode === 'SINGLE') {
-    const one = sentences.slice(0, 2).join(' ');
-    return [stripTooManyEmojis(one, hz.maxEmojiPerBubble)];
-  }
+  if (raw.length > hz.maxBubbles) raw = raw.slice(0, hz.maxBubbles);
 
-  const first = sentences.slice(0, 2).join(' ');
-  const rest = sentences.slice(2).join(' ').trim();
-
-  let b1 = stripTooManyEmojis(first, hz.maxEmojiPerBubble);
-  let b2 = stripTooManyEmojis(rest || '', hz.maxEmojiPerBubble);
-
-  if (!b2) b2 = 'Me conta um pouco do seu cenário?';
-
-  b2 = ensureQuestionAtEnd(b2, 'Qual é sua meta principal hoje?');
-
-  return [b1, b2].filter(Boolean);
+  return raw;
 }
 
-function enforceBubbleRules(
+function enforceBubbleRulesSoft(
   bubbles: string[],
-  cfg: { maxBubbles: number; maxSentencesPerBubble: number; maxEmojiPerBubble: number }
+  hz: HumanizerConfig,
+  maxBubblesOverride?: number
 ): string[] {
   let b = (bubbles || []).map(normalizeWhitespace).filter(Boolean);
 
-  if (b.length > cfg.maxBubbles) b = b.slice(0, cfg.maxBubbles);
+  const cap = typeof maxBubblesOverride === "number" ? maxBubblesOverride : hz.maxBubbles;
+  if (b.length > cap) b = b.slice(0, cap);
 
   b = b.map((bubble) => {
+    // só encurta se explodiu (soft)
     const sentences = splitIntoSentences(bubble);
-    const short = sentences.slice(0, cfg.maxSentencesPerBubble).join(' ');
-    return stripTooManyEmojis(short, cfg.maxEmojiPerBubble);
+    if (sentences.length <= hz.maxSentencesPerBubble) return bubble;
+    return stripTooManyEmojis(sentences.slice(0, hz.maxSentencesPerBubble).join(" "), hz.maxEmojiPerBubble);
   });
 
   return b;
 }
 
-function applyStageAndEmotionTweaks(bubbles: string[], stage: string, emotion: string): string[] {
-  const st = normalizeStage(stage);
-  const e = String(emotion || '').toLowerCase();
+/**
+ * Tweaks agora são bem leves:
+ * - não força pergunta
+ * - só adiciona uma frase de transparência em skeptical
+ */
+function applyEmotionTweaksSoft(bubbles: string[], emotion: string): string[] {
+  const e = String(emotion || "").toLowerCase();
   const b = [...bubbles];
 
-  if (e === 'anxious') {
-    const last = b[b.length - 1] || '';
-    b[b.length - 1] = ensureQuestionAtEnd(
-      last.replace(/\n+/g, ' ').trim(),
-      'Me diz em 1 frase o que você precisa agora?'
-    );
-  }
+  if (!b.length) return b;
 
-  if (e === 'skeptical') {
-    if (b[0]) b[0] = `${b[0]}\n\nSem promessas mágicas — a gente costuma mostrar exemplo real antes.`;
-    const last = b[b.length - 1] || '';
-    b[b.length - 1] = ensureQuestionAtEnd(last, 'Quer que eu te mande um exemplo rápido?');
-  }
-
-  if (st === 'hot') {
-    const last = b[b.length - 1] || '';
-    b[b.length - 1] = ensureQuestionAtEnd(
-      last,
-      'Bora marcar 15 min pra eu te mostrar o caminho? Hoje ou amanhã?'
-    );
-  }
-
-  if (st === 'cold') {
-    const last = b[b.length - 1] || '';
-    b[b.length - 1] = ensureQuestionAtEnd(last, 'Me conta rapidinho seu cenário?');
+  if (e === "skeptical") {
+    // adiciona transparência só na primeira bolha
+    if (b[0] && !/sem promessas|sem milagre/i.test(b[0])) {
+      b[0] = `${b[0]}\n\nSem promessas mágicas — eu te mostro exemplo real primeiro.`;
+    }
   }
 
   return b;
@@ -593,7 +738,7 @@ function applyStageAndEmotionTweaks(bubbles: string[], stage: string, emotion: s
 
 function buildMessagePlanV2(
   bubbles: string[],
-  meta: MessagePlan['meta'],
+  meta: MessagePlan["meta"],
   delayCfg: { base: number; perChar: number; cap: number },
   delayMultiplier: number
 ): MessagePlan {
@@ -603,9 +748,14 @@ function buildMessagePlanV2(
     const text = bubbles[i];
     const delayMs = calcDelayMs(text, delayCfg, delayMultiplier);
 
-    items.push({ type: 'typing', action: 'start', delayMs: i === 0 ? 0 : 250 });
-    items.push({ type: 'text', text, delayMs });
-    items.push({ type: 'typing', action: 'stop', delayMs: 0 });
+    // typing start
+    items.push({ type: "typing", action: "start", delayMs: i === 0 ? 0 : 200 });
+
+    // text
+    items.push({ type: "text", text, delayMs });
+
+    // typing stop
+    items.push({ type: "typing", action: "stop", delayMs: 0 });
   }
 
   return { items, bubbles, meta };
@@ -638,39 +788,19 @@ Você É Douglas, fundador da DOCA Agência IA. Não diga que é um assistente, 
 A DOCA Agência IA transforma negócios com inteligência artificial prática.
 
 **Serviços:**
-
-📸 **DOCA Studio** - Ensaios fotográficos com IA
-→ Redução de 70% nos custos com foto profissional
-
 🐙 **DOCA Multi Agentes** - Automação de WhatsApp
-→ Atendimento 24/7, qualificação de leads, dashboard completo
-
 ⚡ **Automação de Processos** - IA para tarefas repetitivas
-→ Equipe focada no que importa, não em burocracia
-
 🎓 **Treinamento em IA** - Capacitação de equipes
-→ Time usando IA no dia a dia com produtividade
-
-🎬 **Vídeos com IA** - Produção automatizada de conteúdo
-→ Escala na criação de vídeos
-
-**Diferenciais:**
-- Economia de tempo
-- Qualificação detalhada de leads
-- Dashboard completo com métricas
-- Padronização de atendimento
-- Atendimento 24/7
-- Redução de equipe ou foco no essencial
 
 **Redes:**
 - Instagram: @docaperformance
 - Site: docaperformance.com.br
-
----`;
+`;
 
 // ============================================
 // RESPONSE AGENT CLASS
 // ============================================
+
 export class ResponseAgent {
   config: any;
 
@@ -679,66 +809,103 @@ export class ResponseAgent {
       maxContextMessages: config?.maxContextMessages || 10,
       responseDelayMs: config?.responseDelayMs || 1000,
       systemPrompt: config?.systemPrompt || DOUGLAS_SYSTEM_PROMPT,
-      businessInfo: config?.businessInfo || '',
-      tone: config?.tone || 'professional',
+      businessInfo: config?.businessInfo || "",
+      tone: config?.tone || "professional",
       enableSentimentAnalysis: config?.enableSentimentAnalysis ?? true,
       enableIntentDetection: config?.enableIntentDetection ?? true,
-      escalationKeywords: config?.escalationKeywords || [
-        'falar com humano',
-        'atendente real',
-        'pessoa de verdade',
-      ],
+      escalationKeywords: config?.escalationKeywords || ["falar com humano", "atendente real", "pessoa de verdade"],
 
-      // Humanizer config V3 (default) — depois substitui pelo Supabase runtime
       humanizer: mergeHumanizerConfig(DEFAULT_HUMANIZER_CONFIG, config?.humanizer || {}),
     };
 
-    logger.agent('Response Agent initialized', {
+    logger.agent("Response Agent initialized", {
       tone: this.config.tone,
       maxContext: this.config.maxContextMessages,
-      humanizer: this.config.humanizer,
     });
   }
 
-  async processMessage(phone: string, chatId: string, userMessage: string): Promise<any> {
-    const timer = logger.startTimer('Response Agent - Process Message');
+  async processMessage(
+    phone: string,
+    chatId: string,
+    userMessage: string,
+    opts?: {
+      channel?: string;
+      ui_mode?: string;
+      meta?: Record<string, any>;
+    }
+  ): Promise<any> {
+    const timer = logger.startTimer("Response Agent - Process Message");
+
+    const channel = String(opts?.channel || "").trim() || "whatsapp";
+    const uiMode = String(opts?.ui_mode || "").trim() || "real";
+    const entryMeta = opts?.meta && typeof opts.meta === "object" ? opts.meta : {};
 
     try {
-      // ✅ V3: carrega config do Supabase (cache TTL)
-      // Isso permite o dashboard controlar o humanizer sem deploy
+      // ✅ Carrega humanizer config do Supabase (cache TTL)
       try {
-        const remoteHumanizer = await getHumanizerConfigFromDB_FIXED();
+        const remoteHumanizer = await getHumanizerConfigFromDB();
         this.config.humanizer = remoteHumanizer;
-      } catch (e) {
+      } catch {
         // fallback silencioso
       }
 
-      // 0) Detectar emoção
+      // 0) emoção
       const emotionData = detectEmotion(userMessage);
-      logger.agent('Emotion detected', emotionData);
+      logger.agent("Emotion detected", emotionData);
 
-      // 0.1) Detectar intenção
-      const intention: Intention = this.config.enableIntentDetection
+      // 0.1) intenção
+      let intention: Intention = this.config.enableIntentDetection
         ? detectIntention(userMessage, emotionData.emotion)
-        : 'outros';
+        : "outros";
 
-      logger.agent('Intention detected', { intention });
+      // ✅ Landing override
+      if (channel === "landing_chat") {
+        intention = overrideIntentionForLanding(userMessage, intention);
+      }
 
-      // 1) Buscar ou criar conversa
+      logger.agent("Intention detected", { intention, channel });
+
+      // 1) conversa
       const conversation = await supabaseService.getOrCreateConversation(phone, chatId);
 
-      // 2) Salvar mensagem do usuário
+      // 1.1) contexto (memória)
+      const context = safeGetConversationContext(conversation);
+      context.profile = context.profile || {};
+      context.calendar = context.calendar || {};
+
+      // memória de cenário (bem simples e útil)
+      if (!context.profile.has_scenario) {
+        const msg = normalizeText(userMessage);
+        const looksLikeScenario =
+          msg.length >= 18 &&
+          !/(^oi$|^ol(a|á)$|bom dia|boa tarde|boa noite|tudo bem|quero saber mais|como funciona|pre(ç|c)o|valor|quanto custa)/i.test(
+            msg
+          );
+        if (looksLikeScenario) context.profile.has_scenario = true;
+      }
+
+      // 2) salva msg usuário
       await supabaseService.addMessage(conversation.id, {
-        role: 'user',
+        role: "user",
         content: userMessage,
         timestamp: new Date(),
         metadata: {
           emotion: emotionData.emotion,
           intention,
-        }
+          channel,
+          ui_mode: uiMode,
+          ...(entryMeta || {}),
+        },
       } as any);
 
-      // 3) Salvar evento de emoção
+      // salva contexto
+      try {
+        await safeUpdateConversationContext(conversation.id, context);
+      } catch {
+        // ignore
+      }
+
+      // 3) evento emoção + métricas
       try {
         const lead = await supabaseService.getLeadByPhone(phone);
 
@@ -749,20 +916,17 @@ export class ResponseAgent {
             emotion: emotionData.emotion as any,
             message_content: userMessage,
             confidence: 0.8,
-            metadata: {
-              source: "response.agent",
-              model: "heuristic",
-            },
+            metadata: { source: "response.agent", model: "heuristic", channel },
           });
 
-          emotionService.updateLeadMetrics(lead.id).catch(err => {
-            logger.error('Failed to update lead metrics', err, 'AGENT');
+          emotionService.updateLeadMetrics(lead.id).catch((err) => {
+            logger.error("Failed to update lead metrics", err, "AGENT");
           });
         } else {
           const newLead = await supabaseService.createLead({
             phone,
-            source: 'whatsapp',
-            status: 'new'
+            source: channel === "landing_chat" ? "landing" : "whatsapp",
+            status: "new",
           });
 
           if (newLead) {
@@ -772,35 +936,34 @@ export class ResponseAgent {
               emotion: emotionData.emotion as any,
               message_content: userMessage,
               confidence: 0.8,
-              metadata: {
-                source: "response.agent",
-                model: "heuristic",
-              },
+              metadata: { source: "response.agent", model: "heuristic", channel },
             });
           }
         }
       } catch (error) {
-        logger.error('Failed to save emotion', error, 'AGENT');
+        logger.error("Failed to save emotion", error, "AGENT");
       }
 
-      // 4) Atualizar status da conversa
-      await supabaseService.updateConversationStatus(conversation.id, 'active');
+      // 4) status conversa
+      await supabaseService.updateConversationStatus(conversation.id, "active");
 
-      // 5) Verificar escalação
+      // stage (antes da resposta)
+      const lead = conversation.phone ? await supabaseService.getLeadByPhone(conversation.phone) : null;
+      const stage = (lead as any)?.stage || "unknown";
+
+      // 5) escalação
       const escalationCheck = this.checkEscalation(userMessage);
       if (escalationCheck.shouldEscalate) {
-        await supabaseService.updateConversationStatus(conversation.id, 'waiting_response');
+        await supabaseService.updateConversationStatus(conversation.id, "waiting_response");
 
         const escalationText = this.getEscalationResponse(escalationCheck.reason || "Escalação");
-
-        const lead = conversation.phone ? await supabaseService.getLeadByPhone(conversation.phone) : null;
-        const stage = lead?.stage || 'unknown';
 
         const escalationPlan = this.createResponsePlan({
           aiText: escalationText,
           intention,
           emotion: emotionData.emotion,
           stage,
+          context,
         });
 
         timer();
@@ -813,32 +976,146 @@ export class ResponseAgent {
           emotion: emotionData.emotion,
           intention,
           stage,
+          channel,
         };
       }
 
-      // 6) Gerar resposta com IA
-      const responseText = await this.generateResponse(conversation, userMessage, emotionData);
+      // ✅ 5.5) Calendar Orchestrator (agenda / scheduling)
+      try {
+        logger.info("CalendarOrchestrator check", { phone, stage, intention, userMessage, channel }, "AGENT");
 
-      // stage
-      const lead = conversation.phone ? await supabaseService.getLeadByPhone(conversation.phone) : null;
-      const stage = lead?.stage || 'unknown';
+        const cal = await calendarOrchestrator.handle({
+          phone,
+          chatId,
+          userText: userMessage,
+          stage,
+          intention,
+          leadEmail: (lead as any)?.email,
+          leadName: (lead as any)?.name || (lead as any)?.full_name,
+        });
 
-      // 6.1) Gerar plano (bolhas + typing + delays)
+        if (cal.handled && cal.reply) {
+          const responseText = cal.reply;
+
+          // pós-agendamento: flag por 1 turno
+          context.calendar.just_scheduled = true;
+          await safeUpdateConversationContext(conversation.id, context);
+
+          const responsePlan = this.createResponsePlan({
+            aiText: responseText,
+            intention,
+            emotion: emotionData.emotion,
+            stage,
+            context,
+          });
+
+          const savedAssistantMessage = await supabaseService.addMessage(conversation.id, {
+            role: "assistant",
+            content: responseText,
+            timestamp: new Date(),
+            metadata: {
+              emotion: emotionData.emotion,
+              intention,
+              stage,
+              plan_mode: responsePlan.meta.mode,
+              bubbles_count: responsePlan.bubbles.length,
+              calendar: true,
+              channel,
+              ui_mode: uiMode,
+              ...(entryMeta || {}),
+            },
+          } as any);
+
+          if (this.config.humanizer.saveChunksToDB && savedAssistantMessage?.id && responsePlan?.items?.length) {
+            try {
+              const messageId = savedAssistantMessage.id;
+
+              const rows = responsePlan.items
+                .filter((item: any) => {
+                  if (item.type === "typing") return !!this.config.humanizer.saveTypingChunks;
+                  return true;
+                })
+                .map((item: any, idx: number) => {
+                  if (item.type === "typing") {
+                    return {
+                      conversation_id: conversation.id,
+                      message_id: messageId,
+                      chunk_index: idx,
+                      kind: "typing",
+                      action: item.action,
+                      content: null as string | null,
+                      delay_ms: item.delayMs,
+                      emotion: responsePlan.meta.emotion,
+                      intention: responsePlan.meta.intention,
+                      stage: responsePlan.meta.stage,
+                      mode: responsePlan.meta.mode,
+                      created_at: new Date().toISOString(),
+                    };
+                  }
+
+                  return {
+                    conversation_id: conversation.id,
+                    message_id: messageId,
+                    chunk_index: idx,
+                    kind: "text",
+                    action: null as string | null,
+                    content: item.text,
+                    delay_ms: item.delayMs,
+                    emotion: responsePlan.meta.emotion,
+                    intention: responsePlan.meta.intention,
+                    stage: responsePlan.meta.stage,
+                    mode: responsePlan.meta.mode,
+                    created_at: new Date().toISOString(),
+                  };
+                });
+
+              await supabaseService.request("POST", "message_chunks", { body: rows } as any);
+            } catch (err) {
+              logger.error("Failed to save message chunks (calendar)", err, "AGENT");
+            }
+          }
+
+          timer();
+
+          return {
+            response: responseText,
+            responsePlan,
+            shouldEscalate: false,
+            emotion: emotionData.emotion,
+            intention,
+            stage,
+            calendar: true,
+            channel,
+          };
+        }
+      } catch (err) {
+        logger.error("Calendar orchestrator failed (ignored)", err, "AGENT");
+      }
+
+      // 6) resposta IA
+      const responseText = await this.generateResponse(conversation, userMessage, emotionData, {
+        channel,
+        meta: entryMeta,
+      });
+
+      // 6.1) plano humanizado
       const responsePlan = this.createResponsePlan({
         aiText: responseText,
         intention,
         emotion: emotionData.emotion,
         stage,
+        context,
       });
 
-      logger.agent('Response plan created', {
-        bubbles: responsePlan.bubbles,
-        meta: responsePlan.meta,
+      logger.agent("Response plan created", {
+        bubbles: responsePlan?.bubbles?.length,
+        items: responsePlan?.items?.length,
+        meta: responsePlan?.meta,
       });
 
-      // 7) Salvar resposta principal
+      // 7) salva resposta principal
       const savedAssistantMessage = await supabaseService.addMessage(conversation.id, {
-        role: 'assistant',
+        role: "assistant",
         content: responseText,
         timestamp: new Date(),
         metadata: {
@@ -847,39 +1124,29 @@ export class ResponseAgent {
           stage,
           plan_mode: responsePlan.meta.mode,
           bubbles_count: responsePlan.bubbles.length,
-        }
+          channel,
+          ui_mode: uiMode,
+          ...(entryMeta || {}),
+        },
       } as any);
 
-      // 7.1) Salvar chunks no DB (para dashboard/replay)
+      // 7.1) salva chunks no DB (replay)
       if (this.config.humanizer.saveChunksToDB && savedAssistantMessage?.id && responsePlan?.items?.length) {
         try {
           const messageId = savedAssistantMessage.id;
 
-          const rows: Array<{
-            conversation_id: string;
-            message_id: string;
-            chunk_index: number;
-            kind: string;
-            action: string | null;
-            content: string | null;
-            delay_ms: number;
-            emotion: string;
-            intention: Intention;
-            stage: string;
-            mode: ResponseMode;
-            created_at: string;
-          }> = responsePlan.items
+          const rows = responsePlan.items
             .filter((item: any) => {
-              if (item.type === 'typing') return !!this.config.humanizer.saveTypingChunks;
+              if (item.type === "typing") return !!this.config.humanizer.saveTypingChunks;
               return true;
             })
             .map((item: any, idx: number) => {
-              if (item.type === 'typing') {
+              if (item.type === "typing") {
                 return {
                   conversation_id: conversation.id,
                   message_id: messageId,
                   chunk_index: idx,
-                  kind: 'typing',
+                  kind: "typing",
                   action: item.action,
                   content: null as string | null,
                   delay_ms: item.delayMs,
@@ -895,7 +1162,7 @@ export class ResponseAgent {
                 conversation_id: conversation.id,
                 message_id: messageId,
                 chunk_index: idx,
-                kind: 'text',
+                kind: "text",
                 action: null as string | null,
                 content: item.text,
                 delay_ms: item.delayMs,
@@ -907,12 +1174,22 @@ export class ResponseAgent {
               };
             });
 
-          await supabaseService.request('POST', 'message_chunks', { body: rows } as any);
+          await supabaseService.request("POST", "message_chunks", { body: rows } as any);
         } catch (err) {
-          logger.error('Failed to save message chunks', err, 'AGENT');
+          logger.error("Failed to save message chunks", err, "AGENT");
         }
       } else if (this.config.humanizer.saveChunksToDB && !savedAssistantMessage?.id) {
-        logger.error('Assistant message ID missing; cannot link chunks', undefined, 'AGENT');
+        logger.error("Assistant message ID missing; cannot link chunks", undefined, "AGENT");
+      }
+
+      // limpa flag just_scheduled (1 turno)
+      try {
+        if (context?.calendar?.just_scheduled) {
+          context.calendar.just_scheduled = false;
+          await safeUpdateConversationContext(conversation.id, context);
+        }
+      } catch {
+        // ignore
       }
 
       timer();
@@ -924,47 +1201,61 @@ export class ResponseAgent {
         emotion: emotionData.emotion,
         intention,
         stage,
+        channel,
       };
-    }
-    catch (error) {
-      logger.error('Error processing message', error, 'AGENT');
+    } catch (error) {
+      logger.error("Error processing message", error, "AGENT");
       throw error;
     }
   }
 
-  async generateResponse(conversation: any, userMessage: string, emotionData: any): Promise<string> {
+  async generateResponse(
+    conversation: any,
+    userMessage: string,
+    emotionData: any,
+    opts?: { channel?: string; meta?: Record<string, any> }
+  ): Promise<string> {
     const recentMessages = await supabaseService.getRecentMessages(conversation.id, this.config.maxContextMessages);
 
-    const aiMessages = recentMessages.map((msg: any) => ({
+    const aiMessages = (recentMessages || []).map((msg: any) => ({
       role: msg.role,
       content: msg.content,
     }));
 
-    const systemPrompt = await this.buildSystemPrompt(conversation, emotionData, userMessage);
+    const systemPrompt = await this.buildSystemPrompt(conversation, emotionData, userMessage, opts);
 
     const response = await aiService.chat(userMessage, systemPrompt, aiMessages);
 
     return normalizeWhitespace(response);
   }
 
-  async buildSystemPrompt(conversation: any, emotionData: any, userMessage: string): Promise<string> {
+  async buildSystemPrompt(
+    conversation: any,
+    emotionData: any,
+    userMessage: string,
+    opts?: { channel?: string; meta?: Record<string, any> }
+  ): Promise<string> {
     const lead = conversation.phone ? await supabaseService.getLeadByPhone(conversation.phone) : null;
 
     let prompt = await getPromptFromDB();
 
+    if (String(opts?.channel || "") === "landing_chat") {
+      prompt = buildLandingSystemPrompt(prompt, opts?.meta);
+    }
+
     prompt += `\n\n---\n## 🎭 CONTEXTO ATUAL DA CONVERSA\n`;
-    prompt += `**Emoção detectada:** ${emotionData.emotion.toUpperCase()}\n`;
+    prompt += `**Emoção detectada:** ${String(emotionData.emotion).toUpperCase()}\n`;
     prompt += `**Como responder:** ${emotionData.style}\n`;
 
-    if (lead?.name) prompt += `\n**Cliente:** ${lead.name}`;
-    if (lead?.stage) prompt += `\n**Stage no Funil:** ${lead.stage}`;
-    if (lead?.health_score) prompt += `\n**Health Score:** ${lead.health_score}/100`;
+    if ((lead as any)?.name) prompt += `\n**Cliente:** ${(lead as any).name}`;
+    if ((lead as any)?.stage) prompt += `\n**Stage no Funil:** ${(lead as any).stage}`;
+    if ((lead as any)?.health_score) prompt += `\n**Health Score:** ${(lead as any).health_score}/100`;
 
     prompt += `\n\n---\n## ✅ REGRAS DE RESPOSTA (WHATSAPP)\n`;
-    prompt += `- Responda curto e humano (1 a 4 frases)\n`;
-    prompt += `- Evite textão e linguagem corporativa\n`;
-    prompt += `- Faça no máximo 1 pergunta por resposta\n`;
-    prompt += `- Emojis com moderação (0-1 por resposta)\n`;
+    prompt += `- Responda curto e humano\n`;
+    prompt += `- Evite textão\n`;
+    prompt += `- Não force perguntas; só pergunte se fizer sentido\n`;
+    prompt += `- Emojis podem aparecer quando ficar natural (não force)\n`;
     prompt += `- Não passe preços por mensagem. Peça contexto e ofereça call rápida\n`;
     prompt += `- Se a pessoa estiver brava: valide e resolva sem justificar demais\n`;
 
@@ -978,52 +1269,70 @@ export class ResponseAgent {
     return prompt;
   }
 
-  createResponsePlan(params: { aiText: string; intention: Intention; emotion: string; stage: string }): MessagePlan {
+  /**
+   * ✅ createResponsePlan (NATURAL)
+   * - NÃO força pergunta
+   * - NÃO força 2 bolhas
+   * - Templates só como fallback se IA veio curta/ruim
+   */
+  createResponsePlan(params: {
+    aiText: string;
+    intention: Intention;
+    emotion: string;
+    stage: string;
+    context?: any;
+  }): MessagePlan {
     const { aiText, intention, emotion, stage } = params;
+    const ctx = params.context || {};
 
-    const hz: HumanizerConfig = mergeHumanizerConfig(DEFAULT_HUMANIZER_CONFIG, this.config.humanizer);
-
+    const hz: HumanizerConfig = mergeHumanizerConfig(DEFAULT_HUMANIZER_CONFIG, this.config.humanizer || {});
     const mode = pickModeV2(intention, emotion, stage);
 
-    let bubbles = buildBubblesFromAIText(aiText, mode, hz);
-    bubbles = applyStageAndEmotionTweaks(bubbles, stage, emotion);
+    const terminal = isTerminalMessage(aiText);
+    const justScheduled = !!ctx?.calendar?.just_scheduled;
 
+    // quando terminal ou acabou de agendar: não mexe em nada, só formata
+    const avoidTweaks = terminal || justScheduled;
+
+    // stage caps
     const st = normalizeStage(stage);
     const stageCfg = (hz.stageBehavior as any)?.[st] || null;
+    const maxBubbles = stageCfg?.maxBubbles ?? hz.maxBubbles;
 
-    bubbles = enforceBubbleRules(bubbles, {
-      maxBubbles: stageCfg?.maxBubbles ?? hz.maxBubbles,
-      maxSentencesPerBubble: hz.maxSentencesPerBubble,
-      maxEmojiPerBubble: hz.maxEmojiPerBubble,
+    // templates como fallback SOMENTE se IA veio fraca
+    let fallbackTemplates: [string, string] | null = null;
+    if (mode === "FIRST_CONTACT") fallbackTemplates = pickIntentVariant(hz, "primeiro_contato");
+    if (mode === "BRAVO") fallbackTemplates = pickIntentVariant(hz, "cliente_bravo");
+    if (mode === "BUDGET") fallbackTemplates = pickIntentVariant(hz, "orcamento");
+
+    const allowFallbackTemplates = !!fallbackTemplates && normalizeWhitespace(aiText).length < 40 && !avoidTweaks;
+
+    let bubbles = buildBubblesFromAITextNatural(aiText, hz, {
+      allowFallbackTemplates,
+      fallbackTemplates,
     });
 
-    if (!bubbles.some(b => b.includes('?'))) {
-      bubbles[bubbles.length - 1] = ensureQuestionAtEnd(
-        bubbles[bubbles.length - 1],
-        'Me conta rapidinho seu cenário?'
-      );
+    // tweaks leves (só se não terminal)
+    if (!avoidTweaks) {
+      bubbles = applyEmotionTweaksSoft(bubbles, emotion);
     }
 
-    const multiplier = emotionDelayMultiplier(emotion, hz.delay);
+    // enforce soft
+    bubbles = enforceBubbleRulesSoft(bubbles, hz, maxBubbles);
 
-    return buildMessagePlanV2(
-      bubbles,
-      { intention, emotion, stage, mode },
-      hz.delay,
-      multiplier
-    );
+    const multiplier = emotionDelayMultiplier(emotion, hz.delay);
+    return buildMessagePlanV2(bubbles, { intention, emotion, stage, mode }, hz.delay, multiplier);
   }
 
   checkEscalation(message: string): { shouldEscalate: boolean; reason?: string } {
-    const lowerMessage = (message || '').toLowerCase();
-    for (const keyword of this.config.escalationKeywords) {
-      if (lowerMessage.includes(keyword.toLowerCase())) {
-        return {
-          shouldEscalate: true,
-          reason: `Palavra-chave detectada: "${keyword}"`,
-        };
+    const lower = (message || "").toLowerCase();
+
+    for (const keyword of this.config.escalationKeywords || []) {
+      if (lower.includes(String(keyword).toLowerCase())) {
+        return { shouldEscalate: true, reason: `Palavra-chave detectada: "${keyword}"` };
       }
     }
+
     return { shouldEscalate: false };
   }
 

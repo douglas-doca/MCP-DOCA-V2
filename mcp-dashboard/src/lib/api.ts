@@ -77,6 +77,16 @@ export type DashboardV2Stats = {
 };
 
 // ------------------------------------------------
+// Agent ON/OFF (global)
+// ------------------------------------------------
+
+export type AgentStatus = {
+  enabled: boolean;
+  updated_at?: string | null;
+  by?: string | null;
+};
+
+// ------------------------------------------------
 // API URL resolver
 // ------------------------------------------------
 
@@ -114,6 +124,9 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     console.error(`[API] ${res.status} ${url}`, text);
     throw new Error(`API error ${res.status}: ${text || res.statusText}`);
   }
+
+  // 204 no-content safety
+  if (res.status === 204) return undefined as T;
 
   return res.json() as Promise<T>;
 }
@@ -158,6 +171,21 @@ export async function getMessages(conversationId: string, limit = 50) {
   return request<Message[]>(
     `/messages?conversation_id=${conversationId}&limit=${limit}`
   );
+}
+
+// ------------------------------------------------
+// Agent ON/OFF (global) endpoints
+// ------------------------------------------------
+
+export async function getAgentStatus(): Promise<AgentStatus> {
+  return request<AgentStatus>("/agent/status", { method: "GET" });
+}
+
+export async function setAgentStatus(enabled: boolean): Promise<AgentStatus> {
+  return request<AgentStatus>("/agent/status", {
+    method: "PUT",
+    body: JSON.stringify({ enabled }),
+  });
 }
 
 // ------------------------------------------------

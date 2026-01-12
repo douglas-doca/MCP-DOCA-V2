@@ -1,12 +1,78 @@
 // src/services/analysis.service.ts
 import { supabaseService } from "./supabase.service.js";
-import { wahaService } from "./waha.service.js";
+import { wahaService } from "./index.js";
 import { aiService } from "./ai.service.js";
 import { logger } from "../utils/logger.js";
+import { responseAgent } from "./response.agent.js";
 
 type Range = "today" | "7d" | "30d";
 
+function normalizePhoneOrChatId(input: string): { chatId: string; phone: string } {
+  const raw = String(input || "").trim();
+  const chatId = raw.includes("@") ? raw : raw; // WAHAService pode normalizar; mantemos compat
+  const phone = raw.replace("@c.us", "").replace(/\D/g, "");
+  return { chatId, phone };
+}
+
 export class AnalysisService {
+  // ============================================================
+  // ✅ Humanized Sender (Agent Studio / Humanizer integration)
+  // ============================================================
+  /**
+   * Envia mensagem passando pelo humanizer (Agent Studio).
+   * Usa responseAgent.createResponsePlan() para gerar um plan com bolhas, delays e typing.
+   * Se plan não existir (ou falhar), faz fallback para sendMessage.
+   */
+  private async sendHumanized(
+    phoneOrChatId: string,
+    text: string,
+    meta?: {
+      intention?: string;
+      emotion?: string;
+      stage?: string;
+    }
+  ): Promise<void> {
+    const clean = String(text || "").trim();
+    if (!clean) return;
+
+    const { chatId } = normalizePhoneOrChatId(phoneOrChatId);
+
+    const stage = meta?.stage || "warm";
+    const emotion = meta?.emotion || "neutral";
+    const intention = meta?.intention || "followup";
+
+    // Gera plan usando o mesmo motor do Agent Studio (simulate)
+    const plan =
+      typeof (responseAgent as any)?.createResponsePlan === "function"
+        ? (responseAgent as any).createResponsePlan({
+            aiText: clean,
+            intention,
+            emotion,
+            stage,
+          })
+        : null;
+
+    const items = plan?.items && Array.isArray(plan.items) ? plan.items : null;
+
+    try {
+      // ✅ se existir plan + method sendPlanV3, executa humanizado
+      if (items?.length && typeof (wahaService as any)?.sendPlanV3 === "function") {
+        await (wahaService as any).sendPlanV3(chatId, items);
+        return;
+      }
+
+      // fallback: 1 mensagem
+      await wahaService.sendMessage({ chatId, text: clean });
+    } catch (err) {
+      // fallback absoluto
+      try {
+        await wahaService.sendMessage({ chatId, text: clean });
+      } catch {
+        // ignore
+      }
+    }
+  }
+
   async getStalledConversations(opts: {
     min_minutes: number;
     limit: number;
@@ -137,15 +203,27 @@ export class AnalysisService {
       return { ok: false, error: "Text is too short" };
     }
 
-    const result = await wahaService.sendMessage({
-      chatId: to,
-      text: cleanText,
+    const { phone: phoneNormalized } = normalizePhoneOrChatId(String(to));
+
+    // ✅ stage do lead (melhora CTA / comportamento do humanizer)
+    let stage = "warm";
+    try {
+      if (phoneNormalized) {
+        const lead = await supabaseService.getLeadByPhone(phoneNormalized);
+        stage = (lead as any)?.stage || "warm";
+      }
+    } catch {}
+
+    // ✅ envio humanizado (bolhas + typing + delays)
+    await this.sendHumanized(String(to), cleanText, {
+      intention: "followup",
+      emotion: "neutral",
+      stage,
     });
 
-    // Aqui você pode salvar no supabase um log de followup enviado
-    logger.info("Followup sent", { conversation_id, to }, "ANALYSIS");
+    logger.info("Followup sent", { conversation_id, to, stage }, "ANALYSIS");
 
-    return { ok: true, conversation_id, to, result };
+    return { ok: true, conversation_id, to, stage };
   }
 }
 

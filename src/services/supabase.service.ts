@@ -3,14 +3,14 @@
 // Persistência de dados com Supabase
 // ============================================
 
-import { logger } from '../utils/logger.js';
-import { 
-  Conversation, 
-  Message, 
-  Lead, 
+import { logger } from "../utils/logger.js";
+import {
+  Conversation,
+  Message,
+  Lead,
   ConversationStatus,
   LeadStatus,
-} from '../types/index.js';
+} from "../types/index.js";
 
 interface SupabaseConfig {
   url: string;
@@ -23,20 +23,20 @@ export class SupabaseService {
   private headers: Record<string, string>;
 
   constructor(config?: Partial<SupabaseConfig>) {
-    this.url = config?.url || process.env.SUPABASE_URL || '';
-    this.serviceKey = config?.serviceKey || process.env.SUPABASE_SERVICE_KEY || '';
-    
+    this.url = config?.url || process.env.SUPABASE_URL || "";
+    this.serviceKey = config?.serviceKey || process.env.SUPABASE_SERVICE_KEY || "";
+
     this.headers = {
-      'Content-Type': 'application/json',
-      'apikey': this.serviceKey,
-      'Authorization': `Bearer ${this.serviceKey}`,
-      'Prefer': 'return=representation',
+      "Content-Type": "application/json",
+      apikey: this.serviceKey,
+      Authorization: `Bearer ${this.serviceKey}`,
+      Prefer: "return=representation",
     };
 
     if (!this.url || !this.serviceKey) {
-      logger.warn('Supabase credentials not configured', undefined, 'SUPABASE');
+      logger.warn("Supabase credentials not configured", undefined, "SUPABASE");
     } else {
-      logger.info('Supabase Service initialized', { url: this.url }, 'SUPABASE');
+      logger.info("Supabase Service initialized", { url: this.url }, "SUPABASE");
     }
   }
 
@@ -51,13 +51,15 @@ export class SupabaseService {
       single?: boolean;
     }
   ): Promise<T | null> {
-    const queryString = options?.query ? `?${options.query}` : '';
+    const queryString = options?.query ? `?${options.query}` : "";
     const url = `${this.url}/rest/v1/${table}${queryString}`;
 
     try {
       const headers = { ...this.headers };
+
+      // Se for single, o Supabase devolve um único objeto
       if (options?.single) {
-        headers['Accept'] = 'application/vnd.pgrst.object+json';
+        headers["Accept"] = "application/vnd.pgrst.object+json";
       }
 
       const response = await fetch(url, {
@@ -68,16 +70,23 @@ export class SupabaseService {
 
       if (!response.ok) {
         const error = await response.text();
-        logger.error(`Supabase ${method} ${table} failed`, { status: response.status, error }, 'SUPABASE');
+        // Não loga erro se for 409 (Conflict), pois trataremos no createLead
+        if (response.status !== 409) {
+            logger.error(
+            `Supabase ${method} ${table} failed`,
+            { status: response.status, error },
+            "SUPABASE"
+            );
+        }
         return null;
       }
 
       const text = await response.text();
       if (!text) return null;
-      
+
       return JSON.parse(text) as T;
     } catch (error) {
-      logger.error(`Supabase request failed`, error, 'SUPABASE');
+      logger.error("Supabase request failed", error, "SUPABASE");
       return null;
     }
   }
@@ -93,21 +102,34 @@ export class SupabaseService {
       phone: lead.phone,
       name: lead.name || null,
       email: lead.email || null,
-      source: lead.source || 'whatsapp',
+      source: lead.source || "whatsapp",
       score: lead.score || 0,
-      status: lead.status || 'new',
+      status: lead.status || "new",
       tags: lead.tags || [],
       custom_fields: lead.customFields || {},
       created_at: now,
       updated_at: now,
     };
 
-    const result = await this.request<Lead[]>('POST', 'leads', { body: data });
-    return result?.[0] ? this.mapLead(result[0]) : null;
+    // Tenta criar
+    const result = await this.request<any[]>("POST", "leads", { body: data });
+    
+    // Se criou com sucesso, retorna
+    if (result?.[0]) {
+        return this.mapLead(result[0]);
+    }
+
+    // CORREÇÃO CRÍTICA: Se falhou (provavelmente duplicado), busca o existente
+    if (lead.phone) {
+        logger.warn(`Lead creation skipped (likely duplicate). Fetching existing: ${lead.phone}`, undefined, "SUPABASE");
+        return this.getLeadByPhone(lead.phone);
+    }
+
+    return null;
   }
 
   async getLeadById(id: string): Promise<Lead | null> {
-    const result = await this.request<Lead>('GET', 'leads', {
+    const result = await this.request<any>("GET", "leads", {
       query: `id=eq.${id}`,
       single: true,
     });
@@ -115,9 +137,20 @@ export class SupabaseService {
   }
 
   async getLeadByPhone(phone: string): Promise<Lead | null> {
-    const cleanPhone = phone.replace(/\D/g, '');
-    const result = await this.request<Lead[]>('GET', 'leads', {
-      query: `phone=ilike.*${cleanPhone}*&limit=1`,
+    let query = "";
+    
+    // CORREÇÃO CRÍTICA: Se tiver letras ou dois pontos, é um ID de sessão, NÃO limpa!
+    if (phone.includes(":") || /[a-zA-Z]/.test(phone)) {
+       // Busca exata para IDs de sessão
+       query = `phone=eq.${phone}&limit=1`;
+    } else {
+       // Se for telefone normal (só números), mantém a limpeza e busca flexível
+       const cleanPhone = phone.replace(/\D/g, "");
+       query = `phone=ilike.*${cleanPhone}*&limit=1`;
+    }
+
+    const result = await this.request<any[]>("GET", "leads", {
+      query: query,
     });
     return result?.[0] ? this.mapLead(result[0]) : null;
   }
@@ -133,19 +166,21 @@ export class SupabaseService {
     if (updates.status !== undefined) data.status = updates.status;
     if (updates.tags !== undefined) data.tags = updates.tags;
     if (updates.customFields !== undefined) data.custom_fields = updates.customFields;
-
-    const result = await this.request<Lead[]>('PATCH', 'leads', {
+    if ((updates as any).stage !== undefined) data.stage = (updates as any).stage;
+    
+    const result = await this.request<any[]>("PATCH", "leads", {
       query: `id=eq.${id}`,
       body: data,
     });
+
     return result?.[0] ? this.mapLead(result[0]) : null;
   }
 
   async getLeadsByStatus(status: LeadStatus): Promise<Lead[]> {
-    const result = await this.request<Lead[]>('GET', 'leads', {
+    const result = await this.request<any[]>("GET", "leads", {
       query: `status=eq.${status}&order=updated_at.desc`,
     });
-    return result?.map(r => this.mapLead(r)) || [];
+    return result?.map((r) => this.mapLead(r)) || [];
   }
 
   // ============ Conversation Operations ============
@@ -164,25 +199,25 @@ export class SupabaseService {
       chat_id: chatId,
       phone,
       lead_id: lead?.id,
-      status: 'new',
+      status: "new",
       context: {},
       created_at: now,
       updated_at: now,
       last_message_at: now,
     };
 
-    const result = await this.request<any[]>('POST', 'conversations', { body: data });
+    const result = await this.request<any[]>("POST", "conversations", { body: data });
     if (!result?.[0]) return null;
 
     return this.mapConversation(result[0], []);
   }
 
   async getConversationById(id: string): Promise<Conversation | null> {
-    const result = await this.request<any>('GET', 'conversations', {
+    const result = await this.request<any>("GET", "conversations", {
       query: `id=eq.${id}`,
       single: true,
     });
-    
+
     if (!result) return null;
 
     const messages = await this.getMessagesByConversation(id);
@@ -190,9 +225,18 @@ export class SupabaseService {
   }
 
   async getConversationByPhone(phone: string): Promise<Conversation | null> {
-    const cleanPhone = phone.replace(/\D/g, '');
-    const result = await this.request<any[]>('GET', 'conversations', {
-      query: `phone=ilike.*${cleanPhone}*&order=updated_at.desc&limit=1`,
+    let query = "";
+    
+    // Mesma lógica de proteção do ID de sessão
+    if (phone.includes(":") || /[a-zA-Z]/.test(phone)) {
+        query = `phone=eq.${phone}&order=updated_at.desc&limit=1`;
+    } else {
+        const cleanPhone = phone.replace(/\D/g, "");
+        query = `phone=ilike.*${cleanPhone}*&order=updated_at.desc&limit=1`;
+    }
+
+    const result = await this.request<any[]>("GET", "conversations", {
+      query: query,
     });
 
     if (!result?.[0]) return null;
@@ -203,14 +247,20 @@ export class SupabaseService {
 
   async getOrCreateConversation(phone: string, chatId: string): Promise<Conversation> {
     let conversation = await this.getConversationByPhone(phone);
+
     if (!conversation) {
       conversation = await this.createConversation(phone, chatId);
     }
-    return conversation!;
+
+    if (!conversation) {
+      throw new Error("Supabase: Failed to getOrCreateConversation");
+    }
+
+    return conversation;
   }
 
   async updateConversationStatus(id: string, status: ConversationStatus): Promise<void> {
-    await this.request('PATCH', 'conversations', {
+    await this.request("PATCH", "conversations", {
       query: `id=eq.${id}`,
       body: {
         status,
@@ -220,7 +270,7 @@ export class SupabaseService {
   }
 
   async updateConversationContext(id: string, context: Record<string, unknown>): Promise<void> {
-    await this.request('PATCH', 'conversations', {
+    await this.request("PATCH", "conversations", {
       query: `id=eq.${id}`,
       body: {
         context,
@@ -230,7 +280,7 @@ export class SupabaseService {
   }
 
   async getConversationsByStatus(status: ConversationStatus): Promise<Conversation[]> {
-    const result = await this.request<any[]>('GET', 'conversations', {
+    const result = await this.request<any[]>("GET", "conversations", {
       query: `status=eq.${status}&order=updated_at.desc`,
     });
 
@@ -246,8 +296,8 @@ export class SupabaseService {
 
   async getGhostedConversations(hoursAgo: number): Promise<Conversation[]> {
     const cutoff = new Date(Date.now() - hoursAgo * 60 * 60 * 1000).toISOString();
-    
-    const result = await this.request<any[]>('GET', 'conversations', {
+
+    const result = await this.request<any[]>("GET", "conversations", {
       query: `status=in.(active,waiting_response)&last_message_at=lt.${cutoff}&order=last_message_at.asc`,
     });
 
@@ -263,7 +313,7 @@ export class SupabaseService {
 
   // ============ Message Operations ============
 
-  async addMessage(conversationId: string, message: Omit<Message, 'id'>): Promise<Message | null> {
+  async addMessage(conversationId: string, message: Omit<Message, "id">): Promise<Message | null> {
     const id = this.generateId();
     const timestamp = message.timestamp?.toISOString() || new Date().toISOString();
 
@@ -276,9 +326,9 @@ export class SupabaseService {
       metadata: message.metadata || {},
     };
 
-    const result = await this.request<any[]>('POST', 'messages', { body: data });
+    const result = await this.request<any[]>("POST", "messages", { body: data });
 
-    await this.request('PATCH', 'conversations', {
+    await this.request("PATCH", "conversations", {
       query: `id=eq.${conversationId}`,
       body: {
         last_message_at: timestamp,
@@ -291,28 +341,35 @@ export class SupabaseService {
   }
 
   async getMessagesByConversation(conversationId: string, limit: number = 50): Promise<Message[]> {
-    const result = await this.request<any[]>('GET', 'messages', {
+    const result = await this.request<any[]>("GET", "messages", {
       query: `conversation_id=eq.${conversationId}&order=timestamp.desc&limit=${limit}`,
     });
-    return result?.reverse().map(r => this.mapMessage(r)) || [];
+
+    return result?.reverse().map((r) => this.mapMessage(r)) || [];
   }
 
   async getRecentMessages(conversationId: string, count: number = 10): Promise<Message[]> {
-    const result = await this.request<any[]>('GET', 'messages', {
+    const result = await this.request<any[]>("GET", "messages", {
       query: `conversation_id=eq.${conversationId}&order=timestamp.desc&limit=${count}`,
     });
-    return result?.reverse().map(r => this.mapMessage(r)) || [];
+
+    return result?.reverse().map((r) => this.mapMessage(r)) || [];
   }
 
   // ============ Template Operations ============
 
-  async createTemplate(name: string, content: string, category?: string, variables?: string[]): Promise<void> {
+  async createTemplate(
+    name: string,
+    content: string,
+    category?: string,
+    variables?: string[]
+  ): Promise<void> {
     const id = this.generateId();
-    await this.request('POST', 'templates', {
+    await this.request("POST", "templates", {
       body: {
         id,
         name,
-        category: category || 'general',
+        category: category || "general",
         content,
         variables: variables || [],
         created_at: new Date().toISOString(),
@@ -321,11 +378,13 @@ export class SupabaseService {
   }
 
   async getTemplate(name: string): Promise<{ content: string; variables: string[] } | null> {
-    const result = await this.request<any>('GET', 'templates', {
+    const result = await this.request<any>("GET", "templates", {
       query: `name=eq.${name}`,
       single: true,
     });
+
     if (!result) return null;
+
     return {
       content: result.content,
       variables: result.variables || [],
@@ -333,8 +392,8 @@ export class SupabaseService {
   }
 
   async getAllTemplates(): Promise<Array<{ name: string; category: string; content: string }>> {
-    const result = await this.request<any[]>('GET', 'templates', {
-      query: 'select=name,category,content',
+    const result = await this.request<any[]>("GET", "templates", {
+      query: "select=name,category,content",
     });
     return result || [];
   }
@@ -345,13 +404,13 @@ export class SupabaseService {
     const id = this.generateId();
     const now = new Date().toISOString();
 
-    await this.request('POST', 'prospecting_sequences', {
+    await this.request("POST", "prospecting_sequences", {
       body: {
         id,
         lead_id: leadId,
         sequence_name: sequenceName,
         current_step: 0,
-        status: 'active',
+        status: "active",
         created_at: now,
         updated_at: now,
       },
@@ -360,34 +419,38 @@ export class SupabaseService {
     return id;
   }
 
-  async getActiveSequences(): Promise<Array<{
-    id: string;
-    leadId: string;
-    sequenceName: string;
-    currentStep: number;
-    nextActionAt: string | null;
-  }>> {
-    const result = await this.request<any[]>('GET', 'prospecting_sequences', {
+  async getActiveSequences(): Promise<
+    Array<{
+      id: string;
+      leadId: string;
+      sequenceName: string;
+      currentStep: number;
+      nextActionAt: string | null;
+    }>
+  > {
+    const result = await this.request<any[]>("GET", "prospecting_sequences", {
       query: `status=eq.active`,
     });
 
-    return result?.map(row => ({
-      id: row.id,
-      leadId: row.lead_id,
-      sequenceName: row.sequence_name,
-      currentStep: row.current_step,
-      nextActionAt: row.next_action_at,
-    })) || [];
+    return (
+      result?.map((row) => ({
+        id: row.id,
+        leadId: row.lead_id,
+        sequenceName: row.sequence_name,
+        currentStep: row.current_step,
+        nextActionAt: row.next_action_at,
+      })) || []
+    );
   }
 
   async advanceSequenceStep(sequenceId: string, nextActionAt?: Date): Promise<void> {
-    const current = await this.request<any>('GET', 'prospecting_sequences', {
+    const current = await this.request<any>("GET", "prospecting_sequences", {
       query: `id=eq.${sequenceId}`,
       single: true,
     });
 
     if (current) {
-      await this.request('PATCH', 'prospecting_sequences', {
+      await this.request("PATCH", "prospecting_sequences", {
         query: `id=eq.${sequenceId}`,
         body: {
           current_step: (current.current_step || 0) + 1,
@@ -399,33 +462,19 @@ export class SupabaseService {
   }
 
   async completeSequence(sequenceId: string): Promise<void> {
-    await this.request('PATCH', 'prospecting_sequences', {
+    await this.request("PATCH", "prospecting_sequences", {
       query: `id=eq.${sequenceId}`,
       body: {
-        status: 'completed',
+        status: "completed",
         updated_at: new Date().toISOString(),
       },
     });
   }
 
-  // ============ Stats & Analytics ============
-
-  getStats(): {
-    totalLeads: number;
-    totalConversations: number;
-    activeConversations: number;
-  } {
-    return {
-      totalLeads: 0,
-      totalConversations: 0,
-      activeConversations: 0,
-    };
-  }
-
   // ============ Dashboard API Methods ============
 
   async getConversations(limit: number = 50): Promise<any[]> {
-    const result = await this.request<any[]>('GET', 'conversations', {
+    const result = await this.request<any[]>("GET", "conversations", {
       query: `order=updated_at.desc&limit=${limit}`,
     });
     return result || [];
@@ -433,10 +482,9 @@ export class SupabaseService {
 
   async getLeads(status?: string, limit: number = 50): Promise<any[]> {
     let query = `order=updated_at.desc&limit=${limit}`;
-    if (status) {
-      query = `status=eq.${status}&${query}`;
-    }
-    const result = await this.request<any[]>('GET', 'leads', { query });
+    if (status) query = `status=eq.${status}&${query}`;
+
+    const result = await this.request<any[]>("GET", "leads", { query });
     return result || [];
   }
 
@@ -450,26 +498,26 @@ export class SupabaseService {
     conversationsByStatus: Record<string, number>;
     leadsByStatus: Record<string, number>;
   }> {
-    const leads = await this.request<any[]>('GET', 'leads', {
-      query: 'select=id,status',
+    const leads = await this.request<any[]>("GET", "leads", {
+      query: "select=id,status",
     });
 
-    const conversations = await this.request<any[]>('GET', 'conversations', {
-      query: 'select=id,status',
+    const conversations = await this.request<any[]>("GET", "conversations", {
+      query: "select=id,status",
     });
 
-    const messages = await this.request<any[]>('GET', 'messages', {
-      query: 'select=id',
+    const messages = await this.request<any[]>("GET", "messages", {
+      query: "select=id",
     });
 
     const leadsByStatus: Record<string, number> = {};
     const conversationsByStatus: Record<string, number> = {};
 
-    leads?.forEach(l => {
+    leads?.forEach((l) => {
       leadsByStatus[l.status] = (leadsByStatus[l.status] || 0) + 1;
     });
 
-    conversations?.forEach(c => {
+    conversations?.forEach((c) => {
       conversationsByStatus[c.status] = (conversationsByStatus[c.status] || 0) + 1;
     });
 
@@ -477,11 +525,25 @@ export class SupabaseService {
       totalLeads: leads?.length || 0,
       totalConversations: conversations?.length || 0,
       totalMessages: messages?.length || 0,
-      activeConversations: conversationsByStatus['active'] || 0,
-      newLeads: leadsByStatus['new'] || 0,
-      qualifiedLeads: leadsByStatus['qualified'] || 0,
+      activeConversations: conversationsByStatus["active"] || 0,
+      newLeads: leadsByStatus["new"] || 0,
+      qualifiedLeads: leadsByStatus["qualified"] || 0,
       conversationsByStatus,
       leadsByStatus,
+    };
+  }
+
+  // ============ Stats & Analytics (placeholder) ============
+
+  getStats(): {
+    totalLeads: number;
+    totalConversations: number;
+    activeConversations: number;
+  } {
+    return {
+      totalLeads: 0,
+      totalConversations: 0,
+      activeConversations: 0,
     };
   }
 
@@ -500,6 +562,13 @@ export class SupabaseService {
       source: row.source,
       score: row.score,
       status: row.status as LeadStatus,
+
+      // Dados adicionais
+      stage: row.stage || null,
+      health_score: row.health_score ?? null,
+      urgency_level: row.urgency_level ?? null,
+      conversion_probability: row.conversion_probability ?? null,
+
       tags: row.tags || [],
       customFields: row.custom_fields || {},
       createdAt: new Date(row.created_at),
@@ -524,7 +593,7 @@ export class SupabaseService {
   private mapMessage(row: any): Message {
     return {
       id: row.id,
-      role: row.role as 'user' | 'assistant' | 'system',
+      role: row.role as "user" | "assistant" | "system",
       content: row.content,
       timestamp: new Date(row.timestamp),
       metadata: row.metadata || {},
@@ -532,11 +601,11 @@ export class SupabaseService {
   }
 
   async initialize(): Promise<void> {
-    logger.info('Supabase Service ready', undefined, 'SUPABASE');
+    logger.info("Supabase Service ready", undefined, "SUPABASE");
   }
 
   close(): void {
-    logger.info('Supabase Service closed', undefined, 'SUPABASE');
+    logger.info("Supabase Service closed", undefined, "SUPABASE");
   }
 }
 

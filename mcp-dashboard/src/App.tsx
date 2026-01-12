@@ -42,6 +42,9 @@ import AgentStudioPage from "./pages/AgentStudioPage";
 // ✅ Modal IA
 import AISuggestionsModal from "./components/AISuggestionsModal";
 
+// ✅ Agent ON/OFF (global)
+import AgentToggle from "./components/AgentToggle";
+
 // ✅ Demo mode
 import { isDemoMode, getDemoKey, getDemoData, getAllDemoOptions } from "./mock";
 
@@ -125,21 +128,21 @@ export default function App() {
     [demoMode]
   );
 
-useEffect(() => {
-  loadData();
-
-  // ✅ No modo demo, não precisa polling
-  if (demoMode) return;
-
-  // ✅ Polling simples (sem realtime)
-  const interval = setInterval(() => {
-    setLastUpdate(new Date());
+  useEffect(() => {
     loadData();
-  }, 15000); // 15s (pode ser 30s)
 
-  return () => clearInterval(interval);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-}, []);
+    // ✅ No modo demo, não precisa polling
+    if (demoMode) return;
+
+    // ✅ Polling simples (sem realtime)
+    const interval = setInterval(() => {
+      setLastUpdate(new Date());
+      loadData();
+    }, 15000); // 15s (pode ser 30s)
+
+    return () => clearInterval(interval);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const loadData = async () => {
     try {
@@ -470,6 +473,9 @@ useEffect(() => {
             >
               <Bell className="w-4 h-4 text-gray-300" />
             </button>
+
+            {/* ✅ Agent ON/OFF (prod only) */}
+            <AgentToggle hidden={demoMode} />
 
             {/* Refresh */}
             <button
