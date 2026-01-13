@@ -1,23 +1,33 @@
-// src/pages/ReportsPage.tsx
 import React, { useMemo, useRef, useState } from "react";
 import {
   Download,
-  Filter,
   CalendarDays,
   Sparkles,
-  ArrowRight,
   FileText,
-  Shield,
   TrendingUp,
+  Users,
+  Target,
+  Flame,
+  X,
+  CheckCircle2,
+  AlertTriangle,
+  Search,
+  DollarSign,
+  Heart,
+  Lightbulb,
+  Printer,
+  Clock,
+  BarChart3,
+  PieChart,
 } from "lucide-react";
-import GlassCard from "../components/GlassCard";
-import { useDashboardMetrics } from "../hooks/useEmotionData";
-import { isDemoMode } from "../mock";
-import { exportElementToPdf, exportElementToPdf as exportPdf } from "../lib/exportPdf";
+import { isDemoMode, getDemoData } from "../mock";
+import { exportElementToPdf } from "../lib/exportPdf";
 
 type PeriodKey = "today" | "7d" | "30d" | "90d";
 
 type Props = {
+  leads?: any[];
+  conversations?: any[];
   onGoToFunnel?: () => void;
 };
 
@@ -28,498 +38,602 @@ const PERIODS: { key: PeriodKey; label: string }[] = [
   { key: "90d", label: "90 dias" },
 ];
 
-function formatPct(n: number) {
-  const x = Number(n);
-  if (!Number.isFinite(x)) return "—";
-  const sign = x > 0 ? "+" : "";
-  return `${sign}${x.toFixed(0)}%`;
-}
+export default function ReportsPage({ leads: propsLeads, conversations: propsConvs, onGoToFunnel }: Props) {
+  const demoMode = isDemoMode();
+  const demo = useMemo(() => (demoMode ? getDemoData() : null), [demoMode]);
 
-function safe(n: any, fallback = 0) {
-  const x = Number(n);
-  return Number.isFinite(x) ? x : fallback;
-}
+  const leads = useMemo(() => {
+    if (propsLeads && propsLeads.length > 0) return propsLeads;
+    if (demoMode && demo?.leads) return demo.leads;
+    return [];
+  }, [propsLeads, demoMode, demo]);
 
-function cn(...classes: Array<string | false | null | undefined>) {
-  return classes.filter(Boolean).join(" ");
-}
-
-function pillBase() {
-  return "rounded-2xl border border-white/10 bg-white/[0.03] backdrop-blur-xl px-4 py-2 text-sm text-gray-200 hover:bg-white/[0.06] transition";
-}
-
-function btnBase() {
-  return "inline-flex items-center gap-2 rounded-2xl border border-white/10 bg-white/[0.04] backdrop-blur-xl px-4 py-2 text-sm font-semibold text-white hover:bg-white/[0.08] transition";
-}
-
-function btnPrimary() {
-  return "inline-flex items-center gap-2 rounded-2xl border border-[#f57f17]/35 bg-[#f57f17]/15 backdrop-blur-xl px-4 py-2 text-sm font-semibold text-white hover:bg-[#f57f17]/20 transition shadow-[0_0_0_1px_rgba(245,127,23,0.12)]";
-}
-
-export default function ReportsPage({ onGoToFunnel }: Props) {
-  const { data, loading, error } = useDashboardMetrics();
-  const demoMode = useMemo(() => isDemoMode(), []);
+  const conversations = useMemo(() => {
+    if (propsConvs && propsConvs.length > 0) return propsConvs;
+    if (demoMode && demo?.conversations) return demo.conversations;
+    return [];
+  }, [propsConvs, demoMode, demo]);
 
   const exportRef = useRef<HTMLDivElement | null>(null);
-
-  // Filtros (no futuro isso vira query params)
   const [period, setPeriod] = useState<PeriodKey>("7d");
-  const [channel, setChannel] = useState<"all" | "whatsapp" | "instagram">("all");
-  const [leadStatus, setLeadStatus] = useState<
-    "all" | "new" | "active" | "won" | "lost"
-  >("all");
+  const [insightModal, setInsightModal] = useState(false);
+  const [exporting, setExporting] = useState(false);
 
-  // -------------------------------------------------------
-  // Dados
-  // -------------------------------------------------------
-  const totalLeadsRaw = safe(data?.total_leads, 0);
-  const avgHealthRaw = Math.round(safe(data?.avg_health_score, 0));
-  const avgTempRaw = Math.round(safe(data?.avg_temperature, 0));
-  const totalEventsRaw = safe(data?.total_emotion_events, 0);
+  // ============ MÉTRICAS CALCULADAS ============
 
-  // Se PROD tá zerado, a UX fica feia.
-  // Então no DEMO a gente preenche com fallback premium.
-  // No PROD: se vier 0, mostramos ainda 0 (mas com sugestão).
-  const totalLeads = demoMode ? Math.max(totalLeadsRaw, 35) : totalLeadsRaw;
-  const avgHealth = demoMode ? Math.max(avgHealthRaw, 76) : avgHealthRaw;
-  const avgTemp = demoMode ? Math.max(avgTempRaw, 68) : avgTempRaw;
-  const totalEvents = demoMode ? Math.max(totalEventsRaw, 128) : totalEventsRaw;
+  const metrics = useMemo(() => {
+    const totalLeads = leads.length;
+    const totalConvs = conversations.length;
 
-  // Estimativa de conversão (até ter won/total real)
-  const stageDist = data?.stage_distribution || {};
-  const prontoGuess = safe((stageDist as any)?.pronto, demoMode ? 8 : 0);
-  const conversionRate = totalLeads > 0 ? (prontoGuess / totalLeads) * 100 : 0;
+    // Health médio
+    const healthScores = leads.map(l => l.health_score ?? l.score ?? 50).filter(Boolean);
+    const avgHealth = healthScores.length > 0 
+      ? Math.round(healthScores.reduce((a, b) => a + b, 0) / healthScores.length) 
+      : 0;
 
-  // Variações (mock de comparação)
-  const deltaLeads = demoMode ? 18 : 0;
-  const deltaConv = demoMode ? 9 : 0;
-  const deltaHealth = demoMode ? 6 : 0;
-  const deltaTemp = demoMode ? -2 : 0;
-  const deltaEvents = demoMode ? 22 : 0;
+    // Conversão média
+    const convProbs = leads.map(l => l.conversion_probability ?? 0.4);
+    const avgConversion = convProbs.length > 0
+      ? Math.round((convProbs.reduce((a, b) => a + b, 0) / convProbs.length) * 100)
+      : 0;
 
-  // -------------------------------------------------------
-  // Ações
-  // -------------------------------------------------------
-  function handleInsightIA() {
-    // Aqui pode virar modal depois
-    const insights: string[] = [];
+    // Distribuição por estágio
+    const stages: Record<string, number> = {};
+    leads.forEach(l => {
+      const st = l.stage || "curioso";
+      stages[st] = (stages[st] || 0) + 1;
+    });
 
-    if (conversionRate >= 20) {
-      insights.push("Seu funil está forte: alta proporção em PRONTO.");
-    } else if (conversionRate >= 10) {
-      insights.push("Bom potencial: aumente follow-up nos leads quentes.");
-    } else {
-      insights.push("Baixa conversão: precisamos elevar intenção e remover fricção.");
+    // Leads por urgência
+    const urgencyHigh = leads.filter(l => l.urgency_level === "high" || l.urgency_level === "critical").length;
+    const urgencyCritical = leads.filter(l => l.urgency_level === "critical").length;
+    const urgencyNormal = leads.filter(l => l.urgency_level === "normal" || !l.urgency_level).length;
+    const urgencyLow = leads.filter(l => l.urgency_level === "low").length;
+
+    // Leads prontos
+    const prontos = leads.filter(l => (l.stage || "").toLowerCase() === "pronto").length;
+    const empolgados = leads.filter(l => (l.stage || "").toLowerCase() === "empolgado").length;
+    const curiosos = leads.filter(l => (l.stage || "").toLowerCase() === "curioso").length;
+    const ceticos = leads.filter(l => (l.stage || "").toLowerCase() === "cético").length;
+    const preco = leads.filter(l => (l.stage || "").toLowerCase().includes("preço")).length;
+    
+    const conversionRate = totalLeads > 0 ? Math.round((prontos / totalLeads) * 100) : 0;
+
+    // Status
+    const statusNew = leads.filter(l => l.status === "new").length;
+    const statusContacted = leads.filter(l => l.status === "contacted").length;
+    const statusQualified = leads.filter(l => l.status === "qualified").length;
+    const statusWon = leads.filter(l => l.status === "won").length;
+    const statusLost = leads.filter(l => l.status === "lost").length;
+
+    // Leads em risco
+    const emRisco = leads.filter(l => 
+      (l.health_score ?? 50) <= 40 && 
+      (l.urgency_level === "high" || l.urgency_level === "critical")
+    ).length;
+
+    // Leads quentes (health >= 70)
+    const quentes = leads.filter(l => (l.health_score ?? 50) >= 70).length;
+
+    // Leads frios (health <= 30)
+    const frios = leads.filter(l => (l.health_score ?? 50) <= 30).length;
+
+    // Tags mais comuns
+    const tagCounts: Record<string, number> = {};
+    leads.forEach(l => {
+      (l.tags || []).forEach((t: string) => {
+        tagCounts[t] = (tagCounts[t] || 0) + 1;
+      });
+    });
+    const topTags = Object.entries(tagCounts)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 5)
+      .map(([tag, count]) => ({ tag, count }));
+
+    return {
+      totalLeads,
+      totalConvs,
+      avgHealth,
+      avgConversion,
+      stages,
+      urgencyHigh,
+      urgencyCritical,
+      urgencyNormal,
+      urgencyLow,
+      prontos,
+      empolgados,
+      curiosos,
+      ceticos,
+      preco,
+      conversionRate,
+      statusNew,
+      statusContacted,
+      statusQualified,
+      statusWon,
+      statusLost,
+      emRisco,
+      quentes,
+      frios,
+      topTags,
+    };
+  }, [leads, conversations]);
+
+  // ============ INSIGHTS IA ============
+
+  const insights = useMemo(() => {
+    const list: { type: "success" | "warning" | "danger"; text: string }[] = [];
+
+    if (metrics.conversionRate >= 20) {
+      list.push({ type: "success", text: "Excelente! Seu funil está com alta conversão." });
+    } else if (metrics.conversionRate >= 10) {
+      list.push({ type: "warning", text: "Bom potencial. Aumente follow-ups nos leads quentes." });
+    } else if (metrics.totalLeads > 0) {
+      list.push({ type: "danger", text: "Conversão baixa. Foco em remover objeções e criar urgência." });
     }
 
-    if (avgHealth < 55) {
-      insights.push("Health médio está baixo: há risco de esfriar.");
-    } else if (avgHealth >= 75) {
-      insights.push("Health alto: ótimo momento para atacar leads no topo.");
+    if (metrics.avgHealth >= 70) {
+      list.push({ type: "success", text: "Health médio alto! Leads engajados." });
+    } else if (metrics.avgHealth >= 50) {
+      list.push({ type: "warning", text: "Health médio OK. Alguns leads podem esfriar." });
+    } else if (metrics.totalLeads > 0) {
+      list.push({ type: "danger", text: "Health médio baixo. Risco de perder leads." });
     }
 
-    if (totalEvents < 30) {
-      insights.push("Poucos eventos emocionais: falta volume para leitura do modelo.");
+    if (metrics.emRisco > 0) {
+      list.push({ type: "danger", text: `${metrics.emRisco} lead(s) em risco crítico precisam de atenção.` });
     }
 
-    insights.push("Sugestão: execute o Plano do Dia no Funil para destacar leads críticos.");
+    if (metrics.urgencyHigh > 0) {
+      list.push({ type: "warning", text: `${metrics.urgencyHigh} lead(s) com urgência alta aguardando ação.` });
+    }
 
-    alert(insights.join("\n• ").replace(/^/, "• "));
-  }
+    if (metrics.prontos > 0) {
+      list.push({ type: "success", text: `${metrics.prontos} lead(s) prontos para fechar!` });
+    }
+
+    if (metrics.frios > 0) {
+      list.push({ type: "warning", text: `${metrics.frios} lead(s) frios precisam de reativação.` });
+    }
+
+    if (list.length === 0) {
+      list.push({ type: "warning", text: "Sem dados suficientes para gerar insights." });
+    }
+
+    return list;
+  }, [metrics]);
+
+  // ============ STAGE DATA ============
+
+  const stageData = useMemo(() => {
+    const order = ["curioso", "cético", "sensível_preço", "empolgado", "pronto"];
+    const labels: Record<string, string> = {
+      curioso: "Curiosos",
+      cético: "Céticos",
+      sensível_preço: "Sensíveis a Preço",
+      empolgado: "Empolgados",
+      pronto: "Prontos",
+    };
+    const colors: Record<string, string> = {
+      curioso: "bg-blue-500",
+      cético: "bg-fuchsia-500",
+      sensível_preço: "bg-cyan-500",
+      empolgado: "bg-emerald-500",
+      pronto: "bg-orange-500",
+    };
+    const icons: Record<string, any> = {
+      curioso: Search,
+      cético: Lightbulb,
+      sensível_preço: DollarSign,
+      empolgado: Heart,
+      pronto: Flame,
+    };
+
+    const total = leads.length || 1;
+    return order.map(key => ({
+      key,
+      label: labels[key] || key,
+      count: metrics.stages[key] || 0,
+      pct: Math.round(((metrics.stages[key] || 0) / total) * 100),
+      color: colors[key] || "bg-gray-500",
+      Icon: icons[key] || Users,
+    }));
+  }, [leads, metrics.stages]);
+
+  // ============ EXPORT PDF ============
 
   async function handleExportPdf() {
+    if (!exportRef.current) return;
+    setExporting(true);
+    
     try {
-      if (!exportRef.current) return;
-
-await exportElementToPdf(exportRef.current, {
-  filename: "Relatorio-DOCA.pdf",
-  scale: 2,
-  backgroundColor: "#0b0f19",
-});
+      const periodLabel = PERIODS.find(p => p.key === period)?.label || period;
+      const date = new Date().toLocaleDateString("pt-BR");
+      const time = new Date().toLocaleTimeString("pt-BR");
+      
+      await exportElementToPdf(exportRef.current, {
+        filename: `Relatorio-DOCA-${periodLabel}-${date.replace(/\//g, "-")}.pdf`,
+        scale: 2,
+        backgroundColor: "#0a0a0a",
+        orientation: "p",
+      });
     } catch (e: any) {
-      alert(e?.message || "Falha ao exportar PDF");
+      console.error("Erro ao exportar PDF:", e);
+      alert("Erro ao exportar PDF: " + (e?.message || "Erro desconhecido"));
+    } finally {
+      setExporting(false);
     }
   }
 
-  // -------------------------------------------------------
-  // UI Helpers
-  // -------------------------------------------------------
-  const emptyProd = !demoMode && !loading && !error && totalLeadsRaw === 0;
+  const periodLabel = PERIODS.find(p => p.key === period)?.label || period;
+  const reportDate = new Date().toLocaleDateString("pt-BR");
+  const reportTime = new Date().toLocaleTimeString("pt-BR");
+
+  // ============ RENDER ============
 
   return (
     <div className="space-y-6">
-      {/* Header premium + filtros */}
+      {/* Header */}
       <div className="flex items-start justify-between flex-wrap gap-4">
         <div>
-          <h2 className="text-2xl font-bold text-white">Relatórios</h2>
+          <h2 className="text-2xl font-bold text-white flex items-center gap-2">
+            <FileText className="w-6 h-6 text-[#f57f17]" />
+            Relatórios
+          </h2>
           <p className="text-gray-500 text-sm mt-1">
-            Performance do funil, qualidade do atendimento e sinais de conversão.
+            Performance do funil, métricas e insights
           </p>
         </div>
 
         <div className="flex items-center gap-2 flex-wrap">
-          {/* Period */}
-          <div className={pillBase() + " flex items-center gap-2"}>
+          <div className="h-10 px-3 rounded-xl border border-white/10 bg-white/5 flex items-center gap-2">
             <CalendarDays className="w-4 h-4 text-gray-400" />
             <select
               value={period}
               onChange={(e) => setPeriod(e.target.value as PeriodKey)}
-              className="bg-transparent outline-none text-gray-200"
+              className="bg-transparent outline-none text-sm text-gray-200"
             >
               {PERIODS.map((p) => (
-                <option key={p.key} value={p.key} className="bg-[#0b0f19]">
+                <option key={p.key} value={p.key} className="bg-black">
                   {p.label}
                 </option>
               ))}
             </select>
           </div>
 
-          {/* Channel */}
-          <div className={pillBase() + " flex items-center gap-2"}>
-            <Filter className="w-4 h-4 text-gray-400" />
-            <select
-              value={channel}
-              onChange={(e) => setChannel(e.target.value as any)}
-              className="bg-transparent outline-none text-gray-200"
-            >
-              <option value="all" className="bg-[#0b0f19]">
-                Todos os canais
-              </option>
-              <option value="whatsapp" className="bg-[#0b0f19]">
-                WhatsApp
-              </option>
-              <option value="instagram" className="bg-[#0b0f19]">
-                Instagram
-              </option>
-            </select>
-          </div>
-
-          {/* Lead status */}
-          <div className={pillBase() + " flex items-center gap-2"}>
-            <select
-              value={leadStatus}
-              onChange={(e) => setLeadStatus(e.target.value as any)}
-              className="bg-transparent outline-none text-gray-200"
-            >
-              <option value="all" className="bg-[#0b0f19]">
-                Todos os status
-              </option>
-              <option value="new" className="bg-[#0b0f19]">
-                Novos
-              </option>
-              <option value="active" className="bg-[#0b0f19]">
-                Ativos
-              </option>
-              <option value="won" className="bg-[#0b0f19]">
-                Ganhos
-              </option>
-              <option value="lost" className="bg-[#0b0f19]">
-                Perdidos
-              </option>
-            </select>
-          </div>
-
-          {/* Insight IA */}
-          <button onClick={handleInsightIA} className={btnPrimary()}>
+          <button
+            onClick={() => setInsightModal(true)}
+            className="h-10 px-4 rounded-xl border border-[#f57f17]/30 bg-[#f57f17]/10 hover:bg-[#f57f17]/20 text-sm font-semibold text-white flex items-center gap-2"
+          >
             <Sparkles className="w-4 h-4 text-[#f57f17]" />
-            Insight IA
+            Insights IA
           </button>
 
-          {/* Export */}
-          <button onClick={handleExportPdf} className={btnBase()}>
-            <Download className="w-4 h-4 text-gray-300" />
-            Exportar PDF
+          <button
+            onClick={handleExportPdf}
+            disabled={exporting}
+            className="h-10 px-4 rounded-xl bg-gradient-to-r from-[#f57f17] to-[#ff9800] hover:opacity-90 disabled:opacity-50 text-sm font-semibold text-white flex items-center gap-2"
+          >
+            {exporting ? (
+              <>
+                <Clock className="w-4 h-4 animate-spin" />
+                Gerando...
+              </>
+            ) : (
+              <>
+                <Download className="w-4 h-4" />
+                Exportar PDF
+              </>
+            )}
+          </button>
+
+          <button
+            onClick={onGoToFunnel}
+            className="h-10 px-4 rounded-xl border border-white/10 bg-white/5 hover:bg-white/10 text-sm font-medium text-gray-200 flex items-center gap-2"
+          >
+            <TrendingUp className="w-4 h-4" />
+            Ir para Funil
           </button>
         </div>
       </div>
 
-      {/* Exportable section */}
-      <div ref={exportRef} className="space-y-6">
-        {/* KPI Cards */}
-        <div>
-          <div className="mb-4">
-            <p className="text-white font-semibold">KPIs detalhados</p>
-            <p className="text-gray-500 text-sm">
-              Métricas do período (no passo 3 vira gráficos).
-            </p>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6">
-            <GlassCard
-              title="Leads gerados"
-              subtitle="Total no período"
-              right={<DeltaPill value={deltaLeads} />}
-            >
-              <KPIValue loading={loading} error={error} value={totalLeads} />
-              <KPIHint>Volume total de leads com atividade recente.</KPIHint>
-            </GlassCard>
-
-            <GlassCard
-              title="Conversões"
-              subtitle="Estimativa (pronto / total)"
-              right={<DeltaPill value={deltaConv} />}
-            >
-              <KPIValue
-                loading={loading}
-                error={error}
-                value={totalLeads > 0 ? `${conversionRate.toFixed(1)}%` : "—"}
-              />
-              <KPIHint>
-                No PROD vira taxa real (won/total) quando o backend expor.
-              </KPIHint>
-            </GlassCard>
-
-            <GlassCard
-              title="Health Score médio"
-              subtitle="Qualidade geral do funil"
-              right={<DeltaPill value={deltaHealth} />}
-            >
-              <KPIValue loading={loading} error={error} value={avgHealth} />
-              <KPIHint>Score médio 0–100 (quanto maior, melhor).</KPIHint>
-            </GlassCard>
-
-            <GlassCard
-              title="Temperatura média"
-              subtitle="Propensão de conversão"
-              right={<DeltaPill value={deltaTemp} />}
-            >
-              <KPIValue loading={loading} error={error} value={avgTemp} />
-              <KPIHint>Temperatura média dos atendimentos ativos.</KPIHint>
-            </GlassCard>
-          </div>
-
-          <div className="grid grid-cols-1 xl:grid-cols-2 gap-6 mt-6">
-            <GlassCard
-              title="Eventos emocionais"
-              subtitle="Cobertura do modelo"
-              right={<DeltaPill value={deltaEvents} />}
-            >
-              <KPIValue loading={loading} error={error} value={totalEvents} />
-              <KPIHint>Mais eventos = leitura emocional mais precisa.</KPIHint>
-
-              <div className="mt-4 rounded-2xl border border-white/10 bg-black/30 p-4">
-                <div className="flex items-center gap-3">
-                  <Shield className="w-4 h-4 text-gray-300" />
-                  <p className="text-gray-300 text-sm">
-                    Esse número indica quantos sinais emocionais o motor leu no período.
-                  </p>
-                </div>
+      {/* EXPORTABLE CONTENT */}
+      <div ref={exportRef} className="space-y-6 bg-[#0a0a0a] p-6 rounded-[28px]">
+        
+        {/* Report Header (for PDF) */}
+        <div className="border-b border-white/10 pb-6 mb-6">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-4">
+              <div className="h-12 w-12 rounded-2xl bg-[#f57f17]/20 border border-[#f57f17]/30 flex items-center justify-center">
+                <BarChart3 className="w-6 h-6 text-[#f57f17]" />
               </div>
-            </GlassCard>
-
-            <GlassCard
-              title="SLA de resposta"
-              subtitle="Média e pico"
-              right={<span className="text-xs text-gray-500">Em breve</span>}
-            >
-              <KPIValue loading={false} error={null} value={"—"} />
-              <KPIHint>Vai medir tempo médio e p90 por canal.</KPIHint>
-
-              <div className="mt-4 rounded-2xl border border-white/10 bg-black/30 p-4">
-                <div className="flex items-center gap-3">
-                  <FileText className="w-4 h-4 text-gray-300" />
-                  <p className="text-gray-300 text-sm">
-                    Assim que o backend expor timestamps, isso vira o KPI mais valioso.
-                  </p>
-                </div>
+              <div>
+                <h1 className="text-xl font-bold text-white">Relatório DOCA AI</h1>
+                <p className="text-gray-500 text-sm">Central de Comando - Análise de Performance</p>
               </div>
-            </GlassCard>
+            </div>
+            <div className="text-right">
+              <p className="text-white font-semibold">Período: {periodLabel}</p>
+              <p className="text-gray-500 text-sm">Gerado em {reportDate} às {reportTime}</p>
+            </div>
           </div>
         </div>
 
-        {/* Next step section */}
-        <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
-          <GlassCard
-            title="Resumo executivo"
-            subtitle="O que importa agora"
-            right={
-              <span className="text-xs text-gray-500">
-                {demoMode ? "DEMO" : "Realtime"}
-              </span>
-            }
-          >
-            <div className="space-y-3">
-              <ExecutiveLine
-                title="Conversão estimada"
-                value={totalLeads > 0 ? `${conversionRate.toFixed(1)}%` : "—"}
-                tone={conversionRate >= 15 ? "good" : conversionRate >= 8 ? "mid" : "bad"}
-              />
-              <ExecutiveLine
-                title="Health médio"
-                value={avgHealth ? `${avgHealth}/100` : "—"}
-                tone={avgHealth >= 75 ? "good" : avgHealth >= 55 ? "mid" : "bad"}
-              />
-              <ExecutiveLine
-                title="Eventos emocionais"
-                value={String(totalEvents)}
-                tone={totalEvents >= 80 ? "good" : totalEvents >= 35 ? "mid" : "bad"}
-              />
+        {/* Resumo Executivo */}
+        <div className="mb-6">
+          <h3 className="text-lg font-bold text-white mb-4 flex items-center gap-2">
+            <PieChart className="w-5 h-5 text-[#f57f17]" />
+            Resumo Executivo
+          </h3>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <KPICard label="Total de Leads" value={metrics.totalLeads} icon={Users} color="text-blue-400" />
+            <KPICard label="Conversas" value={metrics.totalConvs} icon={FileText} color="text-purple-400" />
+            <KPICard label="Health Médio" value={`${metrics.avgHealth}%`} icon={Heart} 
+              color={metrics.avgHealth >= 70 ? "text-emerald-400" : metrics.avgHealth >= 50 ? "text-yellow-400" : "text-red-400"} />
+            <KPICard label="Conversão Média" value={`${metrics.avgConversion}%`} icon={Target} color="text-cyan-400" />
+          </div>
+        </div>
+
+        {/* Pipeline por Estágio */}
+        <div className="mb-6">
+          <h3 className="text-lg font-bold text-white mb-4 flex items-center gap-2">
+            <TrendingUp className="w-5 h-5 text-[#f57f17]" />
+            Distribuição do Pipeline
+          </h3>
+          <div className="rounded-2xl border border-white/10 bg-white/5 p-5">
+            <div className="grid grid-cols-5 gap-4 mb-4">
+              {stageData.map((st) => (
+                <div key={st.key} className="text-center">
+                  <div className={`h-10 w-10 mx-auto rounded-xl ${st.color}/20 flex items-center justify-center mb-2`}>
+                    <st.Icon className={`w-5 h-5 ${st.color.replace("bg-", "text-")}`} />
+                  </div>
+                  <p className="text-2xl font-bold text-white">{st.count}</p>
+                  <p className="text-xs text-gray-500">{st.label}</p>
+                  <p className="text-xs text-gray-600">{st.pct}%</p>
+                </div>
+              ))}
             </div>
+            <div className="space-y-2">
+              {stageData.map((st) => (
+                <div key={st.key} className="flex items-center gap-3">
+                  <span className="text-xs text-gray-400 w-24">{st.label}</span>
+                  <div className="flex-1 h-3 bg-white/5 rounded-full overflow-hidden">
+                    <div className={`h-full ${st.color} rounded-full`} style={{ width: `${st.pct}%` }} />
+                  </div>
+                  <span className="text-xs text-gray-500 w-16 text-right">{st.count} ({st.pct}%)</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
 
-            <div className="mt-4 rounded-2xl border border-white/10 bg-black/30 p-4">
-              <p className="text-white font-semibold text-sm">Próximo passo</p>
-              <p className="text-gray-500 text-sm mt-1">
-                Execute o plano do dia no Funil para impactar os leads com maior chance.
-              </p>
+        {/* Status e Urgência */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+          {/* Status */}
+          <div>
+            <h3 className="text-lg font-bold text-white mb-4">Status dos Leads</h3>
+            <div className="rounded-2xl border border-white/10 bg-white/5 p-5">
+              <div className="space-y-3">
+                <StatusRow label="Novos" value={metrics.statusNew} total={metrics.totalLeads} color="bg-blue-500" />
+                <StatusRow label="Contatados" value={metrics.statusContacted} total={metrics.totalLeads} color="bg-yellow-500" />
+                <StatusRow label="Qualificados" value={metrics.statusQualified} total={metrics.totalLeads} color="bg-purple-500" />
+                <StatusRow label="Ganhos" value={metrics.statusWon} total={metrics.totalLeads} color="bg-emerald-500" />
+                <StatusRow label="Perdidos" value={metrics.statusLost} total={metrics.totalLeads} color="bg-red-500" />
+              </div>
+            </div>
+          </div>
 
-              <button
-                onClick={onGoToFunnel}
-                disabled={!onGoToFunnel}
-                className={cn(
-                  "mt-4 h-10 px-4 rounded-2xl border transition-all flex items-center gap-2 text-sm font-semibold",
-                  onGoToFunnel
-                    ? "border-[#f57f17]/35 bg-[#f57f17]/15 text-white hover:bg-[#f57f17]/20"
-                    : "border-white/10 bg-white/5 text-gray-500 cursor-not-allowed"
-                )}
-              >
-                <ArrowRight className="w-4 h-4 text-[#f57f17]" />
-                Ir para Funil
+          {/* Urgência */}
+          <div>
+            <h3 className="text-lg font-bold text-white mb-4">Nível de Urgência</h3>
+            <div className="rounded-2xl border border-white/10 bg-white/5 p-5">
+              <div className="space-y-3">
+                <StatusRow label="Crítica" value={metrics.urgencyCritical} total={metrics.totalLeads} color="bg-red-500" />
+                <StatusRow label="Alta" value={metrics.urgencyHigh - metrics.urgencyCritical} total={metrics.totalLeads} color="bg-orange-500" />
+                <StatusRow label="Normal" value={metrics.urgencyNormal} total={metrics.totalLeads} color="bg-gray-500" />
+                <StatusRow label="Baixa" value={metrics.urgencyLow} total={metrics.totalLeads} color="bg-blue-500" />
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Health Distribution */}
+        <div className="mb-6">
+          <h3 className="text-lg font-bold text-white mb-4">Saúde dos Leads</h3>
+          <div className="grid grid-cols-3 gap-4">
+            <div className="rounded-2xl border border-emerald-500/20 bg-emerald-500/10 p-5 text-center">
+              <Flame className="w-8 h-8 text-emerald-400 mx-auto mb-2" />
+              <p className="text-3xl font-bold text-emerald-300">{metrics.quentes}</p>
+              <p className="text-sm text-emerald-400">Leads Quentes</p>
+              <p className="text-xs text-gray-500">Health ≥ 70</p>
+            </div>
+            <div className="rounded-2xl border border-yellow-500/20 bg-yellow-500/10 p-5 text-center">
+              <Users className="w-8 h-8 text-yellow-400 mx-auto mb-2" />
+              <p className="text-3xl font-bold text-yellow-300">{metrics.totalLeads - metrics.quentes - metrics.frios}</p>
+              <p className="text-sm text-yellow-400">Leads Mornos</p>
+              <p className="text-xs text-gray-500">Health 31-69</p>
+            </div>
+            <div className="rounded-2xl border border-blue-500/20 bg-blue-500/10 p-5 text-center">
+              <AlertTriangle className="w-8 h-8 text-blue-400 mx-auto mb-2" />
+              <p className="text-3xl font-bold text-blue-300">{metrics.frios}</p>
+              <p className="text-sm text-blue-400">Leads Frios</p>
+              <p className="text-xs text-gray-500">Health ≤ 30</p>
+            </div>
+          </div>
+        </div>
+
+        {/* Métricas de Conversão */}
+        <div className="mb-6">
+          <h3 className="text-lg font-bold text-white mb-4">Métricas de Conversão</h3>
+          <div className="rounded-2xl border border-white/10 bg-white/5 p-5">
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
+              <MetricBox label="Taxa de Conversão" value={`${metrics.conversionRate}%`} hint="Prontos / Total" 
+                tone={metrics.conversionRate >= 15 ? "good" : metrics.conversionRate >= 8 ? "mid" : "bad"} />
+              <MetricBox label="Leads Prontos" value={metrics.prontos} hint="Estágio final" tone="good" />
+              <MetricBox label="Em Risco" value={metrics.emRisco} hint="Health baixo + Urgência alta" 
+                tone={metrics.emRisco > 0 ? "bad" : "good"} />
+              <MetricBox label="Aguardando Ação" value={metrics.urgencyHigh} hint="Urgência alta" 
+                tone={metrics.urgencyHigh > 3 ? "bad" : metrics.urgencyHigh > 0 ? "mid" : "good"} />
+            </div>
+          </div>
+        </div>
+
+        {/* Tags mais comuns */}
+        {metrics.topTags.length > 0 && (
+          <div className="mb-6">
+            <h3 className="text-lg font-bold text-white mb-4">Tags Mais Frequentes</h3>
+            <div className="rounded-2xl border border-white/10 bg-white/5 p-5">
+              <div className="flex flex-wrap gap-2">
+                {metrics.topTags.map(({ tag, count }) => (
+                  <span key={tag} className="px-3 py-1.5 rounded-full bg-white/5 border border-white/10 text-sm text-gray-300">
+                    {tag} <span className="text-gray-500">({count})</span>
+                  </span>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Insights IA */}
+        <div className="mb-6">
+          <h3 className="text-lg font-bold text-white mb-4 flex items-center gap-2">
+            <Sparkles className="w-5 h-5 text-[#f57f17]" />
+            Insights da IA
+          </h3>
+          <div className="rounded-2xl border border-white/10 bg-white/5 p-5 space-y-3">
+            {insights.map((ins, i) => (
+              <div key={i} className={`p-3 rounded-xl border ${
+                ins.type === "success" ? "bg-emerald-500/10 border-emerald-500/20" :
+                ins.type === "warning" ? "bg-yellow-500/10 border-yellow-500/20" :
+                "bg-red-500/10 border-red-500/20"
+              }`}>
+                <p className={`text-sm flex items-center gap-2 ${
+                  ins.type === "success" ? "text-emerald-300" :
+                  ins.type === "warning" ? "text-yellow-300" : "text-red-300"
+                }`}>
+                  {ins.type === "success" ? <CheckCircle2 className="w-4 h-4" /> : <AlertTriangle className="w-4 h-4" />}
+                  {ins.text}
+                </p>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Ações Recomendadas */}
+        <div>
+          <h3 className="text-lg font-bold text-white mb-4">Ações Recomendadas</h3>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <ActionCard title="1. Atacar leads prontos" desc="CTA direto + agendamento. A janela é curta." 
+              pill={`${metrics.prontos} leads`} priority={metrics.prontos > 0} />
+            <ActionCard title="2. Follow-up urgentes" desc="Leads com urgência alta precisam de resposta rápida." 
+              pill={`${metrics.urgencyHigh} leads`} priority={metrics.urgencyHigh > 0} />
+            <ActionCard title="3. Recuperar em risco" desc="Health baixo + urgência alta = risco de perder." 
+              pill={`${metrics.emRisco} leads`} priority={metrics.emRisco > 0} />
+            <ActionCard title="4. Reativar leads frios" desc="Nutrição com conteúdo relevante para reaquecer." 
+              pill={`${metrics.frios} leads`} priority={metrics.frios > 0} />
+          </div>
+        </div>
+
+        {/* Footer */}
+        <div className="border-t border-white/10 pt-6 mt-6">
+          <div className="flex items-center justify-between text-xs text-gray-500">
+            <span>DOCA AI - Central de Comando</span>
+            <span>Relatório gerado automaticamente em {reportDate} às {reportTime}</span>
+          </div>
+        </div>
+      </div>
+
+      {/* Modal de Insights */}
+      {insightModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+          <div className="w-full max-w-lg rounded-[28px] border border-white/10 bg-[#0a0a0a] p-6">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-white font-bold text-lg flex items-center gap-2">
+                <Sparkles className="w-5 h-5 text-[#f57f17]" />
+                Insights IA
+              </h3>
+              <button onClick={() => setInsightModal(false)}
+                className="h-8 w-8 rounded-lg border border-white/10 bg-white/5 hover:bg-white/10 flex items-center justify-center">
+                <X className="w-4 h-4 text-gray-400" />
               </button>
             </div>
-          </GlassCard>
-
-          <GlassCard
-            title="Ações recomendadas"
-            subtitle="O que fazer para melhorar"
-            right={<TrendingUp className="w-4 h-4 text-[#f57f17]" />}
-            className="xl:col-span-2"
-          >
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <ActionCard
-                title="1) Ataque leads prontos"
-                desc="Use CTA direto + agendamento. A janela é curta."
-                pill={`${prontoGuess || 0} leads`}
-              />
-              <ActionCard
-                title="2) Nutrir céticos com prova"
-                desc="Cases curtos + depoimentos + ROI em 15s."
-                pill="Prova social"
-              />
-              <ActionCard
-                title="3) Reduzir risco"
-                desc="Oferta com risco reduzido (teste / garantia / onboarding assistido)."
-                pill="Remover fricção"
-              />
-              <ActionCard
-                title="4) Subir Health médio"
-                desc="Automatize follow-up e evite deixar lead sem toque."
-                pill="Aumentar health"
-              />
+            <div className="space-y-3">
+              {insights.map((ins, i) => (
+                <div key={i} className={`p-4 rounded-xl border ${
+                  ins.type === "success" ? "bg-emerald-500/10 border-emerald-500/20" :
+                  ins.type === "warning" ? "bg-yellow-500/10 border-yellow-500/20" :
+                  "bg-red-500/10 border-red-500/20"
+                }`}>
+                  <p className={`text-sm flex items-center gap-2 ${
+                    ins.type === "success" ? "text-emerald-300" :
+                    ins.type === "warning" ? "text-yellow-300" : "text-red-300"
+                  }`}>
+                    {ins.type === "success" ? <CheckCircle2 className="w-4 h-4" /> : <AlertTriangle className="w-4 h-4" />}
+                    {ins.text}
+                  </p>
+                </div>
+              ))}
             </div>
-          </GlassCard>
+            <button onClick={() => setInsightModal(false)}
+              className="mt-6 w-full h-11 rounded-xl bg-gradient-to-r from-[#f57f17] to-[#ff9800] text-sm font-semibold text-white">
+              Entendi
+            </button>
+          </div>
         </div>
+      )}
+    </div>
+  );
+}
+
+// ============ COMPONENTS ============
+
+function KPICard({ label, value, icon: Icon, color }: { label: string; value: any; icon: any; color: string }) {
+  return (
+    <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
+      <div className="flex items-center gap-2 mb-2">
+        <Icon className={`w-4 h-4 ${color}`} />
+        <span className="text-xs text-gray-500">{label}</span>
       </div>
-
-      {/* Estado */}
-      {!loading && error && (
-        <div className="rounded-2xl border border-red-500/20 bg-red-500/10 px-4 py-3 text-red-200">
-          Erro ao carregar métricas:{" "}
-          <span className="font-semibold">{error}</span>
-        </div>
-      )}
-
-      {/* PROD vazio */}
-      {emptyProd && (
-        <div className="rounded-2xl border border-white/10 bg-white/[0.03] backdrop-blur-xl px-6 py-5">
-          <p className="text-white font-semibold">Sem dados ainda</p>
-          <p className="text-gray-500 text-sm mt-1">
-            No PROD essa tela vai preencher assim que o backend começar a registrar métricas
-            (leads, eventos emocionais e score). Se quiser, eu já deixo essa UI com um
-            estado “Primeiro Setup”.
-          </p>
-        </div>
-      )}
+      <p className="text-2xl font-bold text-white">{value}</p>
     </div>
   );
 }
 
-function KPIValue({
-  loading,
-  error,
-  value,
-}: {
-  loading: boolean;
-  error: string | null;
-  value: any;
-}) {
-  if (loading) {
-    return <div className="h-10 w-28 rounded-xl bg-white/5 animate-pulse" />;
-  }
-  if (error) {
-    return <p className="text-2xl font-bold text-white">—</p>;
-  }
-  return <p className="text-4xl font-bold text-white">{value}</p>;
-}
-
-function KPIHint({ children }: { children: React.ReactNode }) {
-  return <p className="text-gray-500 text-sm mt-2">{children}</p>;
-}
-
-function DeltaPill({ value }: { value: number }) {
-  const v = Number(value);
-  const neutral = !Number.isFinite(v) || v === 0;
-
-  const cls = neutral
-    ? "border-white/10 bg-white/[0.03] text-gray-400"
-    : v > 0
-    ? "border-emerald-400/20 bg-emerald-400/10 text-emerald-200"
-    : "border-red-400/20 bg-red-400/10 text-red-200";
-
+function StatusRow({ label, value, total, color }: { label: string; value: number; total: number; color: string }) {
+  const pct = total > 0 ? Math.round((value / total) * 100) : 0;
   return (
-    <span
-      className={cn(
-        "text-xs font-semibold px-3 py-1 rounded-full border backdrop-blur-xl",
-        cls
-      )}
-      title="Comparação com período anterior (mock enquanto não há histórico)"
-    >
-      {neutral ? "—" : formatPct(v)}
-    </span>
-  );
-}
-
-function ExecutiveLine({
-  title,
-  value,
-  tone,
-}: {
-  title: string;
-  value: string;
-  tone: "good" | "mid" | "bad";
-}) {
-  const toneCls =
-    tone === "good"
-      ? "text-emerald-200"
-      : tone === "mid"
-      ? "text-yellow-200"
-      : "text-red-200";
-
-  return (
-    <div className="rounded-2xl border border-white/10 bg-black/30 px-4 py-3 flex items-center justify-between">
-      <p className="text-gray-400 text-sm">{title}</p>
-      <p className={cn("text-sm font-semibold", toneCls)}>{value}</p>
+    <div className="flex items-center gap-3">
+      <div className={`h-3 w-3 rounded-full ${color}`} />
+      <span className="text-sm text-gray-300 w-24">{label}</span>
+      <div className="flex-1 h-2 bg-white/5 rounded-full overflow-hidden">
+        <div className={`h-full ${color} rounded-full`} style={{ width: `${pct}%` }} />
+      </div>
+      <span className="text-xs text-gray-500 w-20 text-right">{value} ({pct}%)</span>
     </div>
   );
 }
 
-function ActionCard({
-  title,
-  desc,
-  pill,
-}: {
-  title: string;
-  desc: string;
-  pill: string;
-}) {
+function MetricBox({ label, value, hint, tone }: { label: string; value: any; hint: string; tone: "good" | "mid" | "bad" }) {
+  const colors = { good: "text-emerald-400", mid: "text-yellow-400", bad: "text-red-400" };
   return (
-    <div className="rounded-2xl border border-white/10 bg-black/30 hover:bg-black/35 transition-all p-4">
+    <div className="text-center">
+      <p className={`text-3xl font-bold ${colors[tone]}`}>{value}</p>
+      <p className="text-sm text-white mt-1">{label}</p>
+      <p className="text-xs text-gray-500">{hint}</p>
+    </div>
+  );
+}
+
+function ActionCard({ title, desc, pill, priority }: { title: string; desc: string; pill: string; priority: boolean }) {
+  return (
+    <div className={`rounded-xl border p-4 ${priority ? "border-[#f57f17]/30 bg-[#f57f17]/5" : "border-white/10 bg-white/5"}`}>
       <div className="flex items-start justify-between gap-3">
         <div>
           <p className="text-white font-semibold">{title}</p>
           <p className="text-gray-500 text-sm mt-1">{desc}</p>
         </div>
-
-        <span className="text-[11px] px-3 py-1 rounded-full border border-[#f57f17]/20 bg-[#f57f17]/10 text-[#f57f17] font-semibold">
+        <span className={`text-[10px] px-2 py-1 rounded-full font-semibold whitespace-nowrap ${
+          priority ? "bg-[#f57f17]/20 border border-[#f57f17]/30 text-[#f57f17]" : "bg-white/5 border border-white/10 text-gray-400"
+        }`}>
           {pill}
         </span>
       </div>

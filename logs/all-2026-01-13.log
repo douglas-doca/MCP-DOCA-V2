@@ -1,0 +1,16 @@
+{"timestamp":"2026-01-13T05:18:10.382Z","level":"info","message":"WAHA Service initialized","data":{"baseUrl":"http://localhost:3000","session":"default","apiKey":"***missing***"},"context":"AGENT"}
+{"timestamp":"2026-01-13T05:18:10.385Z","level":"warn","message":"API key not set for provider: openai","context":"AI"}
+{"timestamp":"2026-01-13T05:18:10.386Z","level":"info","message":"AI Service initialized","data":{"provider":"openai","model":"gpt-4o-mini"},"context":"AI"}
+{"timestamp":"2026-01-13T05:18:10.386Z","level":"warn","message":"Supabase credentials not configured","context":"SUPABASE"}
+{"timestamp":"2026-01-13T05:18:12.727Z","level":"info","message":"Response Agent initialized","data":{"tone":"professional","maxContext":10},"context":"AGENT"}
+{"timestamp":"2026-01-13T05:18:12.728Z","level":"info","message":"Sequence registered: Sequência de Boas-vindas","context":"AGENT"}
+{"timestamp":"2026-01-13T05:18:12.728Z","level":"info","message":"Sequence registered: Sequência de Reengajamento","context":"AGENT"}
+{"timestamp":"2026-01-13T05:18:12.728Z","level":"info","message":"Sequence registered: Sequência Pós-Demonstração","context":"AGENT"}
+{"timestamp":"2026-01-13T05:18:12.728Z","level":"info","message":"Prospecting Agent initialized","data":{"enabled":false,"maxDaily":100,"businessHours":"9h-18h"},"context":"AGENT"}
+{"timestamp":"2026-01-13T05:18:12.729Z","level":"info","message":"Starting mcp-doca-v2 v1.0.0"}
+{"timestamp":"2026-01-13T05:18:12.737Z","level":"info","message":"Supabase Service ready","context":"SUPABASE"}
+{"timestamp":"2026-01-13T05:18:12.737Z","level":"info","message":"Connecting transport..."}
+{"timestamp":"2026-01-13T05:18:12.738Z","level":"info","message":"mcp-doca-v2 running on stdio"}
+{"timestamp":"2026-01-13T05:18:12.738Z","level":"info","message":"Tools available: 19"}
+{"timestamp":"2026-01-13T05:18:12.738Z","level":"info","message":"Resources available: 3"}
+{"timestamp":"2026-01-13T05:20:34.206Z","level":"info","message":"Shutting down..."}

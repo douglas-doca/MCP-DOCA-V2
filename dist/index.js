@@ -3,6 +3,8 @@
 // MCP-DOCA-V2 - Main Server
 // Model Context Protocol Server para DOCA Agência IA
 // ============================================
+// ✅ CARREGAR .env PRIMEIRO (antes de qualquer import de services)
+import 'dotenv/config';
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { CallToolRequestSchema, ListToolsRequestSchema, ListResourcesRequestSchema, ReadResourceRequestSchema, } from '@modelcontextprotocol/sdk/types.js';
@@ -13,6 +15,7 @@ import { aiService } from './services/ai.service.js';
 import { analysisService } from './services/analysis.service.js';
 import { emotionService } from './services/emotion.service.js';
 import { supabaseService } from './services/supabase.service.js';
+import { clientService } from './services/client.service.js';
 // ============================================
 // Server Configuration
 // ============================================
@@ -386,7 +389,9 @@ server.setRequestHandler(ReadResourceRequestSchema, async (request) => {
                 break;
             case 'doca://status/waha':
                 try {
-                    const status = await wahaService.getSessionStatus();
+                    const status = wahaService.getSessionStatus
+                        ? await wahaService.getSessionStatus()
+                        : { status: 'unknown', message: 'getSessionStatus not available' };
                     content = JSON.stringify(status, null, 2);
                 }
                 catch (error) {
@@ -432,10 +437,12 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
                 result = await wahaService.getMessages(args.phone, args.limit || 50);
                 break;
             case 'waha_check_number':
-                result = await wahaService.checkNumberExists(args.phone);
+                result = await wahaService.checkNumber(args.phone);
                 break;
             case 'waha_session_status':
-                result = await wahaService.getSessionStatus();
+                result = wahaService.getSessionStatus
+                    ? await wahaService.getSessionStatus()
+                    : { status: 'unknown', message: 'getSessionStatus not available' };
                 break;
             // ========== AI Tools ==========
             case 'ai_generate_response':
@@ -561,6 +568,8 @@ async function main() {
         logger.info(`${SERVER_NAME} running on stdio`);
         logger.info(`Tools available: ${TOOLS.length}`);
         logger.info(`Resources available: ${RESOURCES.length}`);
+        // Listar clientes carregados
+        console.log('📁 Clientes disponíveis:', clientService.listClients());
         logger.separator();
     }
     catch (error) {
@@ -579,4 +588,3 @@ process.on('SIGTERM', () => {
 });
 // Start server
 main();
-//# sourceMappingURL=index.js.map

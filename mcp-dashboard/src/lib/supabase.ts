@@ -1,9 +1,13 @@
 import { createClient } from '@supabase/supabase-js'
 
-const supabaseUrl = 'https://llfwrwyqaswehksgvcyr.supabase.co'
-const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImxsZndyd3lxYXN3ZWhrc2d2Y3lyIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2NjUyNjkxNiwiZXhwIjoyMDgyMTAyOTE2fQ.83D6r6kXCtty8Zp6_Ndwg3w1YC9Gi3oc1l9bI_qnU5k'
+const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || 'https://llfwrwyqaswehksgvcyr.supabase.co'
+const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY
 
-export const supabase = createClient(supabaseUrl, supabaseKey)
+if (!supabaseKey) {
+  console.error('⚠️ VITE_SUPABASE_ANON_KEY não configurada no .env')
+}
+
+export const supabase = createClient(supabaseUrl, supabaseKey || '')
 
 // Types
 export interface Lead {

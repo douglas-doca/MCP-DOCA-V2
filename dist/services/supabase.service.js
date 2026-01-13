@@ -2,35 +2,36 @@
 // MCP-DOCA-V2 - Supabase Service
 // Persistência de dados com Supabase
 // ============================================
-import { logger } from '../utils/logger.js';
+import { logger } from "../utils/logger.js";
 export class SupabaseService {
     url;
     serviceKey;
     headers;
     constructor(config) {
-        this.url = config?.url || process.env.SUPABASE_URL || '';
-        this.serviceKey = config?.serviceKey || process.env.SUPABASE_SERVICE_KEY || '';
+        this.url = config?.url || process.env.SUPABASE_URL || "";
+        this.serviceKey = config?.serviceKey || process.env.SUPABASE_SERVICE_KEY || "";
         this.headers = {
-            'Content-Type': 'application/json',
-            'apikey': this.serviceKey,
-            'Authorization': `Bearer ${this.serviceKey}`,
-            'Prefer': 'return=representation',
+            "Content-Type": "application/json",
+            apikey: this.serviceKey,
+            Authorization: `Bearer ${this.serviceKey}`,
+            Prefer: "return=representation",
         };
         if (!this.url || !this.serviceKey) {
-            logger.warn('Supabase credentials not configured', undefined, 'SUPABASE');
+            logger.warn("Supabase credentials not configured", undefined, "SUPABASE");
         }
         else {
-            logger.info('Supabase Service initialized', { url: this.url }, 'SUPABASE');
+            logger.info("Supabase Service initialized", { url: this.url }, "SUPABASE");
         }
     }
     // ============ Generic API Methods ============
     async request(method, table, options) {
-        const queryString = options?.query ? `?${options.query}` : '';
+        const queryString = options?.query ? `?${options.query}` : "";
         const url = `${this.url}/rest/v1/${table}${queryString}`;
         try {
             const headers = { ...this.headers };
+            // Se for single, o Supabase devolve um único objeto
             if (options?.single) {
-                headers['Accept'] = 'application/vnd.pgrst.object+json';
+                headers["Accept"] = "application/vnd.pgrst.object+json";
             }
             const response = await fetch(url, {
                 method,
@@ -39,7 +40,10 @@ export class SupabaseService {
             });
             if (!response.ok) {
                 const error = await response.text();
-                logger.error(`Supabase ${method} ${table} failed`, { status: response.status, error }, 'SUPABASE');
+                // Não loga erro se for 409 (Conflict), pois trataremos no createLead
+                if (response.status !== 409) {
+                    logger.error(`Supabase ${method} ${table} failed`, { status: response.status, error }, "SUPABASE");
+                }
                 return null;
             }
             const text = await response.text();
@@ -48,7 +52,7 @@ export class SupabaseService {
             return JSON.parse(text);
         }
         catch (error) {
-            logger.error(`Supabase request failed`, error, 'SUPABASE');
+            logger.error("Supabase request failed", error, "SUPABASE");
             return null;
         }
     }
@@ -61,28 +65,48 @@ export class SupabaseService {
             phone: lead.phone,
             name: lead.name || null,
             email: lead.email || null,
-            source: lead.source || 'whatsapp',
+            source: lead.source || "whatsapp",
             score: lead.score || 0,
-            status: lead.status || 'new',
+            status: lead.status || "new",
             tags: lead.tags || [],
             custom_fields: lead.customFields || {},
             created_at: now,
             updated_at: now,
         };
-        const result = await this.request('POST', 'leads', { body: data });
-        return result?.[0] ? this.mapLead(result[0]) : null;
+        // Tenta criar
+        const result = await this.request("POST", "leads", { body: data });
+        // Se criou com sucesso, retorna
+        if (result?.[0]) {
+            return this.mapLead(result[0]);
+        }
+        // CORREÇÃO CRÍTICA: Se falhou (provavelmente duplicado), busca o existente
+        if (lead.phone) {
+            logger.warn(`Lead creation skipped (likely duplicate). Fetching existing: ${lead.phone}`, undefined, "SUPABASE");
+            return this.getLeadByPhone(lead.phone);
+        }
+        return null;
     }
     async getLeadById(id) {
-        const result = await this.request('GET', 'leads', {
+        const result = await this.request("GET", "leads", {
             query: `id=eq.${id}`,
             single: true,
         });
         return result ? this.mapLead(result) : null;
     }
     async getLeadByPhone(phone) {
-        const cleanPhone = phone.replace(/\D/g, '');
-        const result = await this.request('GET', 'leads', {
-            query: `phone=ilike.*${cleanPhone}*&limit=1`,
+        let query = "";
+        // CORREÇÃO CRÍTICA: Se tiver letras ou dois pontos, é um ID de sessão, NÃO limpa!
+        if (phone.includes(":") || /[a-zA-Z]/.test(phone)) {
+            // Busca exata para IDs de sessão
+            query = `phone=eq.${phone}&limit=1`;
+        }
+        else {
+            // Se for telefone normal (só números), mantém a limpeza e busca flexível
+            const cleanPhone = phone.replace(/\D/g, "");
+            query = `phone=ilike.*${cleanPhone}*&limit=1`;
+        }
+        const result = await this.request("GET", "leads", {
+            query: query,
         });
         return result?.[0] ? this.mapLead(result[0]) : null;
     }
@@ -102,17 +126,19 @@ export class SupabaseService {
             data.tags = updates.tags;
         if (updates.customFields !== undefined)
             data.custom_fields = updates.customFields;
-        const result = await this.request('PATCH', 'leads', {
+        if (updates.stage !== undefined)
+            data.stage = updates.stage;
+        const result = await this.request("PATCH", "leads", {
             query: `id=eq.${id}`,
             body: data,
         });
         return result?.[0] ? this.mapLead(result[0]) : null;
     }
     async getLeadsByStatus(status) {
-        const result = await this.request('GET', 'leads', {
+        const result = await this.request("GET", "leads", {
             query: `status=eq.${status}&order=updated_at.desc`,
         });
-        return result?.map(r => this.mapLead(r)) || [];
+        return result?.map((r) => this.mapLead(r)) || [];
     }
     // ============ Conversation Operations ============
     async createConversation(phone, chatId) {
@@ -127,19 +153,19 @@ export class SupabaseService {
             chat_id: chatId,
             phone,
             lead_id: lead?.id,
-            status: 'new',
+            status: "new",
             context: {},
             created_at: now,
             updated_at: now,
             last_message_at: now,
         };
-        const result = await this.request('POST', 'conversations', { body: data });
+        const result = await this.request("POST", "conversations", { body: data });
         if (!result?.[0])
             return null;
         return this.mapConversation(result[0], []);
     }
     async getConversationById(id) {
-        const result = await this.request('GET', 'conversations', {
+        const result = await this.request("GET", "conversations", {
             query: `id=eq.${id}`,
             single: true,
         });
@@ -149,9 +175,17 @@ export class SupabaseService {
         return this.mapConversation(result, messages);
     }
     async getConversationByPhone(phone) {
-        const cleanPhone = phone.replace(/\D/g, '');
-        const result = await this.request('GET', 'conversations', {
-            query: `phone=ilike.*${cleanPhone}*&order=updated_at.desc&limit=1`,
+        let query = "";
+        // Mesma lógica de proteção do ID de sessão
+        if (phone.includes(":") || /[a-zA-Z]/.test(phone)) {
+            query = `phone=eq.${phone}&order=updated_at.desc&limit=1`;
+        }
+        else {
+            const cleanPhone = phone.replace(/\D/g, "");
+            query = `phone=ilike.*${cleanPhone}*&order=updated_at.desc&limit=1`;
+        }
+        const result = await this.request("GET", "conversations", {
+            query: query,
         });
         if (!result?.[0])
             return null;
@@ -163,10 +197,13 @@ export class SupabaseService {
         if (!conversation) {
             conversation = await this.createConversation(phone, chatId);
         }
+        if (!conversation) {
+            throw new Error("Supabase: Failed to getOrCreateConversation");
+        }
         return conversation;
     }
     async updateConversationStatus(id, status) {
-        await this.request('PATCH', 'conversations', {
+        await this.request("PATCH", "conversations", {
             query: `id=eq.${id}`,
             body: {
                 status,
@@ -175,7 +212,7 @@ export class SupabaseService {
         });
     }
     async updateConversationContext(id, context) {
-        await this.request('PATCH', 'conversations', {
+        await this.request("PATCH", "conversations", {
             query: `id=eq.${id}`,
             body: {
                 context,
@@ -184,7 +221,7 @@ export class SupabaseService {
         });
     }
     async getConversationsByStatus(status) {
-        const result = await this.request('GET', 'conversations', {
+        const result = await this.request("GET", "conversations", {
             query: `status=eq.${status}&order=updated_at.desc`,
         });
         if (!result)
@@ -198,7 +235,7 @@ export class SupabaseService {
     }
     async getGhostedConversations(hoursAgo) {
         const cutoff = new Date(Date.now() - hoursAgo * 60 * 60 * 1000).toISOString();
-        const result = await this.request('GET', 'conversations', {
+        const result = await this.request("GET", "conversations", {
             query: `status=in.(active,waiting_response)&last_message_at=lt.${cutoff}&order=last_message_at.asc`,
         });
         if (!result)
@@ -222,8 +259,8 @@ export class SupabaseService {
             timestamp,
             metadata: message.metadata || {},
         };
-        const result = await this.request('POST', 'messages', { body: data });
-        await this.request('PATCH', 'conversations', {
+        const result = await this.request("POST", "messages", { body: data });
+        await this.request("PATCH", "conversations", {
             query: `id=eq.${conversationId}`,
             body: {
                 last_message_at: timestamp,
@@ -235,25 +272,25 @@ export class SupabaseService {
         return this.mapMessage(result[0]);
     }
     async getMessagesByConversation(conversationId, limit = 50) {
-        const result = await this.request('GET', 'messages', {
+        const result = await this.request("GET", "messages", {
             query: `conversation_id=eq.${conversationId}&order=timestamp.desc&limit=${limit}`,
         });
-        return result?.reverse().map(r => this.mapMessage(r)) || [];
+        return result?.reverse().map((r) => this.mapMessage(r)) || [];
     }
     async getRecentMessages(conversationId, count = 10) {
-        const result = await this.request('GET', 'messages', {
+        const result = await this.request("GET", "messages", {
             query: `conversation_id=eq.${conversationId}&order=timestamp.desc&limit=${count}`,
         });
-        return result?.reverse().map(r => this.mapMessage(r)) || [];
+        return result?.reverse().map((r) => this.mapMessage(r)) || [];
     }
     // ============ Template Operations ============
     async createTemplate(name, content, category, variables) {
         const id = this.generateId();
-        await this.request('POST', 'templates', {
+        await this.request("POST", "templates", {
             body: {
                 id,
                 name,
-                category: category || 'general',
+                category: category || "general",
                 content,
                 variables: variables || [],
                 created_at: new Date().toISOString(),
@@ -261,7 +298,7 @@ export class SupabaseService {
         });
     }
     async getTemplate(name) {
-        const result = await this.request('GET', 'templates', {
+        const result = await this.request("GET", "templates", {
             query: `name=eq.${name}`,
             single: true,
         });
@@ -273,8 +310,8 @@ export class SupabaseService {
         };
     }
     async getAllTemplates() {
-        const result = await this.request('GET', 'templates', {
-            query: 'select=name,category,content',
+        const result = await this.request("GET", "templates", {
+            query: "select=name,category,content",
         });
         return result || [];
     }
@@ -282,13 +319,13 @@ export class SupabaseService {
     async startProspectingSequence(leadId, sequenceName) {
         const id = this.generateId();
         const now = new Date().toISOString();
-        await this.request('POST', 'prospecting_sequences', {
+        await this.request("POST", "prospecting_sequences", {
             body: {
                 id,
                 lead_id: leadId,
                 sequence_name: sequenceName,
                 current_step: 0,
-                status: 'active',
+                status: "active",
                 created_at: now,
                 updated_at: now,
             },
@@ -296,24 +333,24 @@ export class SupabaseService {
         return id;
     }
     async getActiveSequences() {
-        const result = await this.request('GET', 'prospecting_sequences', {
+        const result = await this.request("GET", "prospecting_sequences", {
             query: `status=eq.active`,
         });
-        return result?.map(row => ({
+        return (result?.map((row) => ({
             id: row.id,
             leadId: row.lead_id,
             sequenceName: row.sequence_name,
             currentStep: row.current_step,
             nextActionAt: row.next_action_at,
-        })) || [];
+        })) || []);
     }
     async advanceSequenceStep(sequenceId, nextActionAt) {
-        const current = await this.request('GET', 'prospecting_sequences', {
+        const current = await this.request("GET", "prospecting_sequences", {
             query: `id=eq.${sequenceId}`,
             single: true,
         });
         if (current) {
-            await this.request('PATCH', 'prospecting_sequences', {
+            await this.request("PATCH", "prospecting_sequences", {
                 query: `id=eq.${sequenceId}`,
                 body: {
                     current_step: (current.current_step || 0) + 1,
@@ -324,64 +361,63 @@ export class SupabaseService {
         }
     }
     async completeSequence(sequenceId) {
-        await this.request('PATCH', 'prospecting_sequences', {
+        await this.request("PATCH", "prospecting_sequences", {
             query: `id=eq.${sequenceId}`,
             body: {
-                status: 'completed',
+                status: "completed",
                 updated_at: new Date().toISOString(),
             },
         });
     }
-    // ============ Stats & Analytics ============
-    getStats() {
-        return {
-            totalLeads: 0,
-            totalConversations: 0,
-            activeConversations: 0,
-        };
-    }
     // ============ Dashboard API Methods ============
     async getConversations(limit = 50) {
-        const result = await this.request('GET', 'conversations', {
+        const result = await this.request("GET", "conversations", {
             query: `order=updated_at.desc&limit=${limit}`,
         });
         return result || [];
     }
     async getLeads(status, limit = 50) {
         let query = `order=updated_at.desc&limit=${limit}`;
-        if (status) {
+        if (status)
             query = `status=eq.${status}&${query}`;
-        }
-        const result = await this.request('GET', 'leads', { query });
+        const result = await this.request("GET", "leads", { query });
         return result || [];
     }
     async getDashboardStats() {
-        const leads = await this.request('GET', 'leads', {
-            query: 'select=id,status',
+        const leads = await this.request("GET", "leads", {
+            query: "select=id,status",
         });
-        const conversations = await this.request('GET', 'conversations', {
-            query: 'select=id,status',
+        const conversations = await this.request("GET", "conversations", {
+            query: "select=id,status",
         });
-        const messages = await this.request('GET', 'messages', {
-            query: 'select=id',
+        const messages = await this.request("GET", "messages", {
+            query: "select=id",
         });
         const leadsByStatus = {};
         const conversationsByStatus = {};
-        leads?.forEach(l => {
+        leads?.forEach((l) => {
             leadsByStatus[l.status] = (leadsByStatus[l.status] || 0) + 1;
         });
-        conversations?.forEach(c => {
+        conversations?.forEach((c) => {
             conversationsByStatus[c.status] = (conversationsByStatus[c.status] || 0) + 1;
         });
         return {
             totalLeads: leads?.length || 0,
             totalConversations: conversations?.length || 0,
             totalMessages: messages?.length || 0,
-            activeConversations: conversationsByStatus['active'] || 0,
-            newLeads: leadsByStatus['new'] || 0,
-            qualifiedLeads: leadsByStatus['qualified'] || 0,
+            activeConversations: conversationsByStatus["active"] || 0,
+            newLeads: leadsByStatus["new"] || 0,
+            qualifiedLeads: leadsByStatus["qualified"] || 0,
             conversationsByStatus,
             leadsByStatus,
+        };
+    }
+    // ============ Stats & Analytics (placeholder) ============
+    getStats() {
+        return {
+            totalLeads: 0,
+            totalConversations: 0,
+            activeConversations: 0,
         };
     }
     // ============ Helper Methods ============
@@ -397,6 +433,11 @@ export class SupabaseService {
             source: row.source,
             score: row.score,
             status: row.status,
+            // Dados adicionais
+            stage: row.stage || null,
+            health_score: row.health_score ?? null,
+            urgency_level: row.urgency_level ?? null,
+            conversion_probability: row.conversion_probability ?? null,
             tags: row.tags || [],
             customFields: row.custom_fields || {},
             createdAt: new Date(row.created_at),
@@ -426,11 +467,10 @@ export class SupabaseService {
         };
     }
     async initialize() {
-        logger.info('Supabase Service ready', undefined, 'SUPABASE');
+        logger.info("Supabase Service ready", undefined, "SUPABASE");
     }
     close() {
-        logger.info('Supabase Service closed', undefined, 'SUPABASE');
+        logger.info("Supabase Service closed", undefined, "SUPABASE");
     }
 }
 export const supabaseService = new SupabaseService();
-//# sourceMappingURL=supabase.service.js.map

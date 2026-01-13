@@ -76,6 +76,14 @@ services:
       - "traefik.http.routers.mcp-api.tls.certresolver=mytlschallenge"
       - "traefik.http.routers.mcp-api.service=webhook3002"
 
+            # API no mesmo host do dashboard (mcp) em /api/*
+      - "traefik.http.routers.mcp-api-on-mcp.rule=Host(`mcp.docaperformance.com.br`) && PathPrefix(`/api`)"
+      - "traefik.http.routers.mcp-api-on-mcp.entrypoints=websecure"
+      - "traefik.http.routers.mcp-api-on-mcp.tls=true"
+      - "traefik.http.routers.mcp-api-on-mcp.tls.certresolver=mytlschallenge"
+      - "traefik.http.routers.mcp-api-on-mcp.priority=200"
+      - "traefik.http.routers.mcp-api-on-mcp.service=webhook3002"
+
   # ======================================================
   # DASHBOARD & CHAT (Frontends)
   # ======================================================

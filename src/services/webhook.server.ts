@@ -15,6 +15,7 @@ import { URL } from "url";
 
 import { logger } from "../utils/logger.js";
 import { responseAgent } from "./response.agent.js";
+import { clientService } from "./client.service.js";
 import { wahaService } from "./index.js";
 import { supabaseService } from "./supabase.service.js";
 import { emotionService } from "./emotion.service.js";
@@ -290,6 +291,16 @@ export class WebhookServer {
     // ========= Dashboard APIs =========
     this.addRoute("GET", "/api/conversations", this.handleAPIConversations.bind(this));
     this.addRoute("GET", "/api/leads", this.handleAPILeads.bind(this));
+    this.addRoute("GET", "/api/tenants", this.handleAPITenants.bind(this));
+    this.addRoute("POST", "/api/tenants", this.handleAPICreateTenant.bind(this));
+    this.addRoute("PATCH", "/api/tenants", this.handleAPIUpdateTenant.bind(this));
+    this.addRoute("GET", "/api/tenants/metrics", this.handleAPITenantMetrics.bind(this));
+    // ========= Users =========
+    this.addRoute("GET", "/api/users", this.handleAPIUsers.bind(this));
+    this.addRoute("POST", "/api/users", this.handleAPICreateUser.bind(this));
+    this.addRoute("PATCH", "/api/users", this.handleAPIUpdateUser.bind(this));
+    this.addRoute("DELETE", "/api/users", this.handleAPIDeleteUser.bind(this));
+    this.addRoute("PATCH", "/api/leads", this.handleAPIUpdateLead.bind(this)); // ✅ Update lead
     this.addRoute("GET", "/api/messages", this.handleAPIMessages.bind(this));
     this.addRoute("GET", "/api/stats", this.handleAPIStats.bind(this));
 
@@ -401,13 +412,236 @@ export class WebhookServer {
   }
 
   // ============ Dashboard APIs ============
-  private async handleAPIConversations(_req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
+  private async handleAPIConversations(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
     try {
-      const conversations = await supabaseService.getConversations(50);
+      const url = new URL(req.url!, `http://${req.headers.host}`);
+      const limit = parseInt(url.searchParams.get("limit") || "50");
+      const tenantId = url.searchParams.get("tenant_id") || undefined;
+      let conversations;
+      if (tenantId) {
+        conversations = await supabaseService.request<any[]>("GET", "conversations", {
+          query: `tenant_id=eq.${tenantId}\&order=updated_at.desc\&limit=${limit}`,
+        });
+      } else {
+        conversations = await supabaseService.getConversations(limit);
+      }
       this.sendJSON(res, 200, conversations || []);
     } catch (error) {
       logger.error("Error getting conversations", error);
       this.sendJSON(res, 500, { error: "Failed to get conversations" });
+    }
+  }
+  // ============ Tenants API (Multi-tenant) ============
+  private async handleAPITenants(_req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
+    try {
+      const tenants = await supabaseService.request<any[]>("GET", "tenants", {
+        query: "active=eq.true&order=name.asc",
+      });
+      this.sendJSON(res, 200, tenants || []);
+    } catch (error) {
+      logger.error("Error getting tenants", error);
+      this.sendJSON(res, 500, { error: "Failed to get tenants" });
+    }
+  }
+
+  private async handleAPICreateTenant(_req: http.IncomingMessage, res: http.ServerResponse, body: string): Promise<void> {
+    try {
+      const data = JSON.parse(body || "{}");
+      const { name, slug, phone, address, specialty } = data;
+      
+      if (!name || !slug) {
+        this.sendJSON(res, 400, { error: "name and slug are required" });
+        return;
+      }
+      
+      const tenant = await supabaseService.request<any>("POST", "tenants", {
+        body: { 
+          name, 
+          slug, 
+          phone: phone || null,
+          address: address || null,
+          specialty: specialty || null,
+          active: true,
+          agent_config: {
+            enabled: true,
+            personality: "friendly",
+            useEmojis: true,
+            maxBubbles: 2,
+            delays: { base: 450, perChar: 18, cap: 1750 }
+          },
+          business_hours: {
+            days: ["mon", "tue", "wed", "thu", "fri"],
+            open: "09:00",
+            close: "18:00"
+          }
+        },
+      });
+      this.sendJSON(res, 201, tenant);
+    } catch (error) {
+      logger.error("Error creating tenant", error);
+      this.sendJSON(res, 500, { error: "Failed to create tenant" });
+    }
+  }
+
+  private async handleAPIUpdateTenant(req: http.IncomingMessage, res: http.ServerResponse, body: string): Promise<void> {
+    try {
+      const url = new URL(req.url!, `http://${req.headers.host}`);
+      const id = url.searchParams.get("id");
+      
+      if (!id) {
+        this.sendJSON(res, 400, { error: "id is required" });
+        return;
+      }
+      
+      const data = JSON.parse(body || "{}");
+      const tenant = await supabaseService.request<any>("PATCH", "tenants", {
+        query: `id=eq.${id}`,
+        body: data,
+      });
+      this.sendJSON(res, 200, tenant);
+    } catch (error) {
+      logger.error("Error updating tenant", error);
+      this.sendJSON(res, 500, { error: "Failed to update tenant" });
+    }
+  }
+
+  private async handleAPITenantMetrics(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
+    try {
+      const url = new URL(req.url!, `http://${req.headers.host}`);
+      const tenantId = url.searchParams.get("tenant_id");
+      
+      // Buscar todos os tenants ou um específico
+      let tenantsQuery = "active=eq.true";
+      if (tenantId) tenantsQuery += `&id=eq.${tenantId}`;
+      
+      const tenants = await supabaseService.request<any[]>("GET", "tenants", { query: tenantsQuery });
+      
+      const metrics = await Promise.all((tenants || []).map(async (tenant: any) => {
+        // Contar conversas
+        const conversations = await supabaseService.request<any[]>("GET", "conversations", {
+          query: `tenant_id=eq.${tenant.id}&select=id`,
+        });
+        
+        // Contar leads
+        const leads = await supabaseService.request<any[]>("GET", "leads", {
+          query: `tenant_id=eq.${tenant.id}&select=id,status`,
+        });
+        
+        // Contar mensagens
+        const messages = await supabaseService.request<any[]>("GET", "messages", {
+          query: `tenant_id=eq.${tenant.id}&select=id,role,tokens_used`,
+        });
+        
+        // Calcular métricas
+        const totalConversations = conversations?.length || 0;
+        const totalLeads = leads?.length || 0;
+        const qualifiedLeads = leads?.filter((l: any) => l.status === "qualified" || l.status === "won").length || 0;
+        const totalMessages = messages?.length || 0;
+        const assistantMessages = messages?.filter((m: any) => m.role === "assistant").length || 0;
+        const tokensUsed = messages?.reduce((sum: number, m: any) => sum + (m.tokens_used || 0), 0) || 0;
+        
+        return {
+          tenant_id: tenant.id,
+          tenant_name: tenant.name,
+          tenant_slug: tenant.slug,
+          metrics: {
+            conversations: totalConversations,
+            leads: totalLeads,
+            qualified_leads: qualifiedLeads,
+            conversion_rate: totalLeads > 0 ? Math.round((qualifiedLeads / totalLeads) * 100) : 0,
+            messages: totalMessages,
+            assistant_messages: assistantMessages,
+            tokens_used: tokensUsed,
+            avg_messages_per_conversation: totalConversations > 0 ? Math.round(totalMessages / totalConversations) : 0,
+          },
+        };
+      }));
+      
+      this.sendJSON(res, 200, tenantId ? metrics[0] : metrics);
+    } catch (error) {
+      logger.error("Error getting tenant metrics", error);
+      this.sendJSON(res, 500, { error: "Failed to get tenant metrics" });
+    }
+  }
+
+  // ========= Users Handlers =========
+  private async handleAPIUsers(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
+    try {
+      const url = new URL(req.url!, `http://${req.headers.host}`);
+      const tenantId = url.searchParams.get("tenant_id") || undefined;
+      const role = url.searchParams.get("role") || undefined;
+      
+      let query = "select=*,tenant:tenants(id,name,slug)&order=name.asc";
+      if (tenantId) query += `&tenant_id=eq.${tenantId}`;
+      if (role) query += `&role=eq.${role}`;
+      
+      const users = await supabaseService.request<any[]>("GET", "user_profiles", { query });
+      this.sendJSON(res, 200, users || []);
+    } catch (error) {
+      logger.error("Error getting users", error);
+      this.sendJSON(res, 500, { error: "Failed to get users" });
+    }
+  }
+
+  private async handleAPICreateUser(req: http.IncomingMessage, res: http.ServerResponse, body: string): Promise<void> {
+    try {
+      const data = JSON.parse(body || "{}");
+      const { email, name, role, tenant_id } = data;
+      
+      if (!email || !name || !tenant_id) {
+        this.sendJSON(res, 400, { error: "email, name and tenant_id are required" });
+        return;
+      }
+      
+      const user = await supabaseService.request<any>("POST", "user_profiles", {
+        body: { email, name, role: role || "user", tenant_id },
+      });
+      this.sendJSON(res, 201, user);
+    } catch (error) {
+      logger.error("Error creating user", error);
+      this.sendJSON(res, 500, { error: "Failed to create user" });
+    }
+  }
+
+  private async handleAPIUpdateUser(req: http.IncomingMessage, res: http.ServerResponse, body: string): Promise<void> {
+    try {
+      const url = new URL(req.url!, `http://${req.headers.host}`);
+      const id = url.searchParams.get("id");
+      
+      if (!id) {
+        this.sendJSON(res, 400, { error: "id is required" });
+        return;
+      }
+      
+      const data = JSON.parse(body || "{}");
+      const user = await supabaseService.request<any>("PATCH", "user_profiles", {
+        query: `id=eq.${id}`,
+        body,
+      });
+      this.sendJSON(res, 200, user);
+    } catch (error) {
+      logger.error("Error updating user", error);
+      this.sendJSON(res, 500, { error: "Failed to update user" });
+    }
+  }
+
+  private async handleAPIDeleteUser(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
+    try {
+      const url = new URL(req.url!, `http://${req.headers.host}`);
+      const id = url.searchParams.get("id");
+      
+      if (!id) {
+        this.sendJSON(res, 400, { error: "id is required" });
+        return;
+      }
+      
+      await supabaseService.request<any>("DELETE", "user_profiles", {
+        query: `id=eq.${id}`,
+      });
+      this.sendJSON(res, 204, null);
+    } catch (error) {
+      logger.error("Error deleting user", error);
+      this.sendJSON(res, 500, { error: "Failed to delete user" });
     }
   }
 
@@ -417,11 +651,66 @@ export class WebhookServer {
       const limit = parseInt(url.searchParams.get("limit") || "50");
       const status = url.searchParams.get("status") || undefined;
 
-      const leads = await supabaseService.getLeads(status, limit);
+      const tenantId = url.searchParams.get("tenant_id") || undefined;
+      let leads;
+      if (tenantId) {
+        let query = `tenant_id=eq.${tenantId}&order=updated_at.desc&limit=${limit}`;
+        if (status) query += `&status=eq.${status}`;
+        leads = await supabaseService.request<any[]>("GET", "leads", { query });
+      } else {
+        leads = await supabaseService.getLeads(status, limit);
+      }
       this.sendJSON(res, 200, leads || []);
     } catch (error) {
       logger.error("Error getting leads", error);
       this.sendJSON(res, 500, { error: "Failed to get leads" });
+    }
+  }
+
+  // ✅ Update lead (PATCH /api/leads?id=xxx)
+  private async handleAPIUpdateLead(req: http.IncomingMessage, res: http.ServerResponse, body: string): Promise<void> {
+    try {
+      const url = new URL(req.url!, `http://${req.headers.host}`);
+      const leadId = url.searchParams.get("id");
+
+      if (!leadId) {
+        this.sendJSON(res, 400, { error: "id parameter is required" });
+        return;
+      }
+
+      const updates = JSON.parse(body || "{}");
+      if (Object.keys(updates).length === 0) {
+        this.sendJSON(res, 400, { error: "No fields to update" });
+        return;
+      }
+
+      // Campos permitidos para update
+      const allowedFields = ["status", "stage", "health_score", "conversion_probability", "urgency_level", "tags", "name"];
+      const sanitized: Record<string, any> = {};
+      
+      for (const key of allowedFields) {
+        if (updates[key] !== undefined) {
+          sanitized[key] = updates[key];
+        }
+      }
+
+      if (Object.keys(sanitized).length === 0) {
+        this.sendJSON(res, 400, { error: "No valid fields to update" });
+        return;
+      }
+
+      sanitized.updated_at = new Date().toISOString();
+
+      await supabaseService.request("PATCH", "leads", {
+        query: `id=eq.${leadId}`,
+        body: sanitized
+      });
+
+      logger.info(`Lead ${leadId} updated`, sanitized, "API");
+      this.sendJSON(res, 200, { success: true, updated: sanitized });
+    } catch (error) {
+      logger.error("Error updating lead", error);
+      this.sendJSON(res, 500, { error: "Failed to update lead" });
     }
   }
 
@@ -954,7 +1243,7 @@ private async handleAgentSetStatus(_req: http.IncomingMessage, res: http.ServerR
           String((message as any)?.to || (message as any)?.from || "").trim() || String((message as any)?.chatId || "").trim();
 
         // If it's NOT a message that the bot sent, then it's human intervention → pause
-        if (chatId && !isBotSentId(msgId)) {
+        if (chatId && !isBotSentId(msgId, chatId)) {
           pauseChat(chatId, "human_intervention", "human", HANDOFF_TTL_MINUTES);
         }
 
@@ -1149,10 +1438,16 @@ try {
       this.processedMessageIds.set(msgId, Date.now());
     }
 
+    // ✅ Detectar cliente pelo telefone/instance
+    const clientId = clientService.detectClient(phone);
+    const clientConfig = clientId ? clientService.getClientConfig(clientId) : null;
+
     logger.conversation("Processing message", {
       phone,
       chatId,
       text: text.substring(0, 50),
+      clientId: clientId || "unknown",
+      clientName: clientConfig?.nome_exibicao || "N/A",
     });
 
     try {
@@ -1162,6 +1457,7 @@ try {
         channel: "whatsapp",
         ui_mode: "real",
         meta: {},
+        clientId: clientId || undefined,
       });
 
       const finalText = String(result?.response || "").trim();

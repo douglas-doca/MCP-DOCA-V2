@@ -1,18 +1,12 @@
 import React, { useMemo, useState } from "react";
-import { TrendingUp, Sparkles, AlertTriangle, Target, Zap } from "lucide-react";
+import { TrendingUp, Sparkles, AlertTriangle, Target, Zap, Phone, MessageSquare, Trophy, X, ChevronRight, Search, Lightbulb, DollarSign, Heart, Flame, Users } from "lucide-react";
 
 import GlassCard from "../components/GlassCard";
 import EmotionMap2D from "../components/EmotionMap2D";
 
-// ✅ Demo mode (para pegar leads/conversas reais do demo)
 import { isDemoMode, getDemoData } from "../mock";
-
-// ✅ Hook atual (mantemos pra PROD/API quando você quiser)
 import { useDashboardMetrics } from "../hooks/useEmotionData";
 
-// ------------------------------------------------------
-// Tipagem leve (não acoplar no supabase types)
-// ------------------------------------------------------
 type LeadLite = {
   id: string;
   phone: string;
@@ -26,9 +20,6 @@ type LeadLite = {
   last_touch_at?: string;
 };
 
-// ------------------------------------------------------
-// Helpers
-// ------------------------------------------------------
 function clamp(n: number, a: number, b: number) {
   return Math.max(a, Math.min(b, n));
 }
@@ -44,42 +35,21 @@ function pickN<T>(arr: T[], n: number) {
   return out;
 }
 
-// ✅ Plano do dia SEMPRE baseado em leads reais (ótimo pra demo)
 function buildDemoPlanLeadIds(leads: LeadLite[]) {
   if (!Array.isArray(leads) || leads.length === 0) return [];
-
-  const prontos = leads.filter(
-    (l) => String(l.stage || "").toLowerCase() === "pronto"
-  );
-
-  const quentes = leads.filter((l) =>
-    ["high", "critical"].includes(String(l.urgency_level || "").toLowerCase())
-  );
-
+  const prontos = leads.filter((l) => String(l.stage || "").toLowerCase() === "pronto");
+  const quentes = leads.filter((l) => ["high", "critical"].includes(String(l.urgency_level || "").toLowerCase()));
   const emRisco = leads.filter((l) => {
     const health = Number(l.health_score ?? 50);
     const urg = String(l.urgency_level || "").toLowerCase();
     return health <= 45 && (urg === "high" || urg === "critical");
   });
-
-  // ✅ prioridade: prontos, depois quentes, depois em risco
-  const selected = [
-    ...pickN(prontos, 4),
-    ...pickN(quentes, 3),
-    ...pickN(emRisco, 2),
-  ];
-
-  // remove duplicados
-  const ids = Array.from(
-    new Set(selected.map((l) => String(l.id)).filter(Boolean))
-  );
-
-  // fallback se não tiver o suficiente
+  const selected = [...pickN(prontos, 4), ...pickN(quentes, 3), ...pickN(emRisco, 2)];
+  const ids = Array.from(new Set(selected.map((l) => String(l.id)).filter(Boolean)));
   if (ids.length < 5) {
     const randoms = pickN(leads, 8).map((l) => String(l.id));
     return Array.from(new Set([...ids, ...randoms])).slice(0, 10);
   }
-
   return ids.slice(0, 10);
 }
 
@@ -87,20 +57,30 @@ function sum(arr: number[]) {
   return arr.reduce((a, b) => a + b, 0);
 }
 
-// ------------------------------------------------------
-// Página
-// ------------------------------------------------------
+function fmtPhone(phone: string) {
+  const digits = (phone || "").replace(/\D/g, "");
+  if (digits.length < 10) return phone;
+  const d = digits.startsWith("55") ? digits.slice(2) : digits;
+  return `(${d.slice(0, 2)}) ${d.slice(2, 7)}-${d.slice(7, 11)}`;
+}
+
+// ✅ Estágios com ícones Lucide
+const FUNNEL_STAGES = [
+  { key: "curioso", label: "Curiosos", icon: Search, gradient: "from-blue-500 to-blue-600" },
+  { key: "cético", label: "Céticos", icon: Lightbulb, gradient: "from-fuchsia-500 to-fuchsia-600" },
+  { key: "sensível_preço", label: "Preço", icon: DollarSign, gradient: "from-cyan-500 to-cyan-600" },
+  { key: "empolgado", label: "Empolgados", icon: Heart, gradient: "from-emerald-500 to-emerald-600" },
+  { key: "pronto", label: "Prontos", icon: Flame, gradient: "from-orange-500 to-red-500" },
+];
+
 export default function FunnelPage(props: any) {
   const { data, loading, error } = useDashboardMetrics();
-
-  // ✅ Leads vêm do App (prod) OU do demoData (demo)
   const demo = useMemo(() => (isDemoMode() ? getDemoData() : null), []);
   const demoMode = Boolean(demo);
+  const [showActionPanel, setShowActionPanel] = useState(false);
 
   const leads: LeadLite[] = useMemo(() => {
-    // 1) tenta via props (quando App passa leads reais)
     if (Array.isArray(props?.leads) && props.leads.length) {
-      // normaliza campos possíveis
       return props.leads.map((l: any) => ({
         id: String(l.id),
         phone: String(l.phone || ""),
@@ -114,19 +94,13 @@ export default function FunnelPage(props: any) {
         last_touch_at: l.last_touch_at ?? l.lastTouchAt ?? l.updated_at,
       })) as LeadLite[];
     }
-
-    // 2) demo fallback
     if (demoMode && demo?.leads?.length) {
       const byPhoneLastMsg = new Map<string, string>();
-
-      // tenta pegar última msg por telefone pra deixar o mapa mais vivo
       if (Array.isArray(demo.conversations)) {
         demo.conversations.forEach((c: any) => {
-          if (c?.phone && c?.last_message)
-            byPhoneLastMsg.set(c.phone, c.last_message);
+          if (c?.phone && c?.last_message) byPhoneLastMsg.set(c.phone, c.last_message);
         });
       }
-
       return (demo.leads || []).map((l: any) => ({
         id: String(l.id),
         phone: String(l.phone || ""),
@@ -140,134 +114,96 @@ export default function FunnelPage(props: any) {
         last_touch_at: l.updated_at,
       })) as LeadLite[];
     }
-
     return [];
   }, [props?.leads, demoMode, demo]);
 
-  // ✅ Highlights (Plano do dia)
   const [highlightLeadIds, setHighlightLeadIds] = useState<string[]>([]);
 
-  // ------------------------------
-  // Métricas pro War Room
-  // ------------------------------
   const totalLeads = leads.length;
-
-  const readyLeads = useMemo(
-    () => leads.filter((l) => String(l.stage || "").toLowerCase() === "pronto"),
-    [leads]
-  );
-
-  const hotLeads = useMemo(
-    () =>
-      leads.filter((l) =>
-        ["high", "critical"].includes(String(l.urgency_level || "").toLowerCase())
-      ),
-    [leads]
-  );
-
-  const riskLeads = useMemo(
-    () =>
-      leads.filter((l) => {
-        const health = Number(l.health_score ?? 50);
-        const urg = String(l.urgency_level || "").toLowerCase();
-        return health <= 45 && (urg === "high" || urg === "critical");
-      }),
-    [leads]
-  );
-
+  const readyLeads = useMemo(() => leads.filter((l) => String(l.stage || "").toLowerCase() === "pronto"), [leads]);
+  const hotLeads = useMemo(() => leads.filter((l) => ["high", "critical"].includes(String(l.urgency_level || "").toLowerCase())), [leads]);
+  const riskLeads = useMemo(() => leads.filter((l) => {
+    const health = Number(l.health_score ?? 50);
+    const urg = String(l.urgency_level || "").toLowerCase();
+    return health <= 45 && (urg === "high" || urg === "critical");
+  }), [leads]);
   const avgHealth = useMemo(() => {
     if (!leads.length) return 0;
-    return Math.round(
-      sum(leads.map((l) => Number(l.health_score ?? 50))) / leads.length
-    );
+    return Math.round(sum(leads.map((l) => Number(l.health_score ?? 50))) / leads.length);
   }, [leads]);
-
   const slaMin = useMemo(() => {
-    // MVP: estima SLA baseado no tamanho do funil e % high urgency
     const hotRatio = leads.length ? hotLeads.length / leads.length : 0;
-    const base = 140;
-    const penalty = Math.round(hotRatio * 80);
-    return clamp(base + penalty, 60, 260);
+    return clamp(140 + Math.round(hotRatio * 80), 60, 260);
   }, [leads.length, hotLeads.length]);
-
   const predictedRevenue = useMemo(() => {
-    // MVP: previsão fake com base nos prontos e probabilidade média
-    const avgConv =
-      leads.length
-        ? sum(leads.map((l) => Number(l.conversion_probability ?? 0.35))) /
-          leads.length
-        : 0.35;
-
-    const ticket = 1497; // mvp ticket
-    const expected = Math.round(readyLeads.length * ticket * avgConv * 1.1);
-    return expected;
+    const avgConv = leads.length ? sum(leads.map((l) => Number(l.conversion_probability ?? 0.35))) / leads.length : 0.35;
+    return Math.round(readyLeads.length * 1497 * avgConv * 1.1);
   }, [leads, readyLeads.length]);
 
-  // ------------------------------
-  // Ações do War Room
-  // ------------------------------
+  const stageCounts = useMemo(() => {
+    const counts: Record<string, number> = {};
+    leads.forEach((l) => {
+      const stage = (l.stage || "curioso").toLowerCase();
+      counts[stage] = (counts[stage] || 0) + 1;
+    });
+    return counts;
+  }, [leads]);
+
+  const highlightedLeads = useMemo(() => {
+    if (highlightLeadIds.length === 0) return [];
+    return leads.filter((l) => highlightLeadIds.includes(l.id));
+  }, [leads, highlightLeadIds]);
+
   const planIds = useMemo(() => buildDemoPlanLeadIds(leads), [leads]);
 
   const executePlan = () => {
-    // ✅ sempre baseado nos leads reais existentes
     setHighlightLeadIds(planIds);
+    setShowActionPanel(true);
   };
 
-  const clearHighlights = () => setHighlightLeadIds([]);
+  const clearHighlights = () => {
+    setHighlightLeadIds([]);
+    setShowActionPanel(false);
+  };
 
-  // ------------------------------
-  // UI texto
-  // ------------------------------
+  const filterByStage = (stageKey: string) => {
+    const stageLeads = leads.filter((l) => (l.stage || "curioso").toLowerCase() === stageKey);
+    setHighlightLeadIds(stageLeads.map((l) => l.id));
+    setShowActionPanel(true);
+  };
+
   const titleCount = readyLeads.length || highlightLeadIds.length || 0;
+  const subtitle = readyLeads.length > 0
+    ? `${hotLeads.length} leads quentes e ${riskLeads.length} em risco. Execute o plano para aumentar conversão.`
+    : `A IA analisou intenção, urgência e health. Gere um plano para destacar oportunidades.`;
 
-  const subtitle =
-    readyLeads.length > 0
-      ? `Hoje você tem ${hotLeads.length} leads quentes e ${riskLeads.length} em risco. A IA gerou 3 tarefas para aumentar conversão agora.`
-      : `A IA analisou intenção, urgência e health. Gere um plano para destacar oportunidades e riscos no mapa.`;
-
-  // ------------------------------
-  // Cards do plano (3 tasks)
-  // ------------------------------
-  const tasks = useMemo(() => {
-    return [
-      {
-        id: "attack-ready",
-        title: "Atacar leads prontos",
-        desc: `Enviar follow-up para ${Math.min(readyLeads.length || 4, 6)} leads em estágio PRONTO com CTA de call.`,
-        count: Math.min(readyLeads.length || 4, 6),
-        action: () => {
-          const ids = pickN(readyLeads.map((l) => l.id), 6);
-          setHighlightLeadIds(ids);
-        },
+  const tasks = useMemo(() => [
+    {
+      id: "attack-ready",
+      title: "Atacar leads prontos",
+      desc: `Follow-up para ${Math.min(readyLeads.length || 4, 6)} leads PRONTO`,
+      count: Math.min(readyLeads.length || 4, 6),
+      action: () => { setHighlightLeadIds(pickN(readyLeads.map((l) => l.id), 6)); setShowActionPanel(true); },
+    },
+    {
+      id: "save-risk",
+      title: "Salvar esfriando",
+      desc: `Priorizar ${Math.min(riskLeads.length || 3, 5)} leads em risco`,
+      count: Math.min(riskLeads.length || 3, 5),
+      action: () => { setHighlightLeadIds(pickN(riskLeads.map((l) => l.id), 5)); setShowActionPanel(true); },
+    },
+    {
+      id: "price-objection",
+      title: "Destravar preço",
+      desc: `Responder ${Math.min(3, leads.length)} sensíveis a preço`,
+      count: Math.min(3, leads.length),
+      action: () => {
+        const sensiveis = leads.filter((l) => String(l.stage || "").toLowerCase() === "sensível_preço");
+        setHighlightLeadIds(pickN((sensiveis.length ? sensiveis : leads).map((l) => l.id), 6));
+        setShowActionPanel(true);
       },
-      {
-        id: "save-risk",
-        title: "Salvar leads esfriando",
-        desc: `Priorizar ${Math.min(riskLeads.length || 3, 5)} leads em risco (alta urgência + baixo health + tempo sem toque).`,
-        count: Math.min(riskLeads.length || 3, 5),
-        action: () => {
-          const ids = pickN(riskLeads.map((l) => l.id), 5);
-          setHighlightLeadIds(ids);
-        },
-      },
-      {
-        id: "price-objection",
-        title: "Destravar objeção de preço",
-        desc: `Responder ${Math.min(3, leads.length)} sensíveis a preço com oferta em 2 opções e ROI.`,
-        count: Math.min(3, leads.length),
-        action: () => {
-          const sensiveis = leads.filter(
-            (l) => String(l.stage || "").toLowerCase() === "sensível_preço"
-          );
-          const ids = pickN(
-            (sensiveis.length ? sensiveis : leads).map((l) => l.id),
-            6
-          );
-          setHighlightLeadIds(ids);
-        },
-      },
-    ];
-  }, [leads, readyLeads, riskLeads]);
+    },
+  ], [leads, readyLeads, riskLeads]);
 
   return (
     <div className="space-y-6">
@@ -278,294 +214,259 @@ export default function FunnelPage(props: any) {
             <TrendingUp className="w-6 h-6 text-[#f57f17]" />
             Funil & Emoções
           </h2>
-          <p className="text-gray-500 text-sm">
-            Modo War Room: decisão + execução. A IA te diz o que fazer agora.
-            {demoMode ? " (DEMO)" : ""}
-          </p>
-        </div>
-
-        <div className="flex items-center gap-2 bg-[#f57f17]/10 border border-[#f57f17]/20 rounded-2xl px-4 py-2">
-          <Sparkles className="w-4 h-4 text-[#f57f17]" />
-          <span className="text-sm text-gray-300">
-            Plano do dia + Mapa emocional
-          </span>
+          <p className="text-gray-500 text-sm">War Room: decisão + execução{demoMode ? " (DEMO)" : ""}</p>
         </div>
       </div>
 
-      {/* War Room */}
-      <div className="rounded-[28px] border border-white/10 bg-white/[0.03] backdrop-blur-xl shadow-[0_0_0_1px_rgba(255,255,255,0.05)] overflow-hidden">
-        <div className="p-6 border-b border-white/10 flex items-start justify-between gap-6 flex-wrap">
-          <div className="space-y-2">
-            <div className="text-xs text-gray-500 flex items-center gap-2">
-              <Zap className="w-4 h-4 text-[#f57f17]" />
-              Plano do dia (IA)
-            </div>
-
-            <div className="text-3xl font-extrabold text-white">
-              {titleCount} leads prontos{" "}
-              <span className="text-gray-400 font-semibold text-xl">
-                para fechar
-              </span>
-            </div>
-
-            <p className="text-gray-500 text-sm max-w-[720px]">{subtitle}</p>
-
-            <div className="flex items-center gap-3 flex-wrap pt-2">
-              <button
-                onClick={executePlan}
-                className="h-11 px-5 rounded-2xl border border-[#f57f17]/30 bg-[#f57f17]/10 hover:bg-[#f57f17]/15 transition text-white font-semibold flex items-center gap-2"
-              >
-                <div className="h-6 w-6 rounded-xl bg-[#f57f17]/15 border border-[#f57f17]/25 flex items-center justify-center">
+      {/* ============ WAR ROOM (PLANO DO DIA) ============ */}
+      <div className="rounded-[28px] border border-white/10 bg-white/[0.03] backdrop-blur-xl overflow-hidden">
+        <div className="p-6 border-b border-white/10">
+          <div className="flex items-start justify-between gap-6 flex-wrap">
+            <div className="space-y-3">
+              <div className="flex items-center gap-2">
+                <div className="h-8 w-8 rounded-xl bg-[#f57f17]/15 border border-[#f57f17]/25 flex items-center justify-center">
                   <Zap className="w-4 h-4 text-[#f57f17]" />
                 </div>
-                Executar plano do dia
-              </button>
+                <span className="text-xs text-gray-500 font-medium">PLANO DO DIA</span>
+              </div>
 
-              <span className="text-xs text-gray-600">
-                Ao executar: destaca leads no mapa (fica até você limpar).
-              </span>
+              <div className="text-3xl font-extrabold text-white">
+                {titleCount} leads prontos
+              </div>
 
-              {highlightLeadIds.length > 0 && (
-                <button
-                  onClick={clearHighlights}
-                  className="h-11 px-5 rounded-2xl border border-white/10 bg-white/5 hover:bg-white/10 transition text-white font-semibold"
-                >
-                  Limpar destaque
+              <p className="text-gray-500 text-sm max-w-xl">{subtitle}</p>
+
+              <div className="flex items-center gap-3 flex-wrap pt-1">
+                <button onClick={executePlan} className="h-11 px-5 rounded-2xl bg-gradient-to-r from-[#f57f17] to-[#ff9800] hover:opacity-90 transition text-white font-semibold flex items-center gap-2 shadow-lg shadow-[#f57f17]/20">
+                  <Zap className="w-4 h-4" />
+                  Executar plano
                 </button>
+                {highlightLeadIds.length > 0 && (
+                  <button onClick={clearHighlights} className="h-11 px-5 rounded-2xl border border-white/10 bg-white/5 hover:bg-white/10 transition text-white font-semibold">
+                    Limpar
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {/* Mini stats */}
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+              <MiniStat title="Ativos" value={totalLeads} color="text-white" />
+              <MiniStat title="Quentes" value={hotLeads.length} color="text-orange-400" />
+              <MiniStat title="Health" value={avgHealth} color="text-emerald-400" />
+              <MiniStat title="SLA" value={`${slaMin}m`} color="text-cyan-400" />
+            </div>
+          </div>
+        </div>
+
+        {/* Tasks */}
+        <div className="p-6 grid grid-cols-1 md:grid-cols-3 gap-4">
+          {tasks.map((t) => (
+            <button key={t.id} onClick={t.action} className="group text-left rounded-2xl border border-white/10 bg-black/20 p-4 hover:border-[#f57f17]/30 hover:bg-[#f57f17]/5 transition-all">
+              <div className="flex items-center justify-between mb-2">
+                <p className="text-white font-semibold group-hover:text-[#f57f17] transition">{t.title}</p>
+                <span className="text-[11px] px-2 py-1 rounded-full bg-white/5 text-gray-400">{t.count}</span>
+              </div>
+              <p className="text-gray-500 text-sm">{t.desc}</p>
+            </button>
+          ))}
+        </div>
+
+        {/* Revenue prediction */}
+        {predictedRevenue > 0 && (
+          <div className="px-6 pb-6">
+            <div className="rounded-2xl border border-emerald-500/20 bg-emerald-500/5 p-4 flex items-center justify-between gap-4 flex-wrap">
+              <div className="flex items-center gap-3">
+                <div className="h-10 w-10 rounded-xl bg-emerald-500/15 border border-emerald-500/25 flex items-center justify-center">
+                  <Target className="w-5 h-5 text-emerald-400" />
+                </div>
+                <div>
+                  <p className="text-emerald-300 text-sm font-medium">Receita esperada</p>
+                  <p className="text-2xl font-bold text-white">R$ {predictedRevenue.toLocaleString("pt-BR")}</p>
+                </div>
+              </div>
+              {riskLeads.length > 0 && (
+                <div className="flex items-center gap-2 text-sm text-yellow-400">
+                  <AlertTriangle className="w-4 h-4" />
+                  <span>{riskLeads.length} leads esfriando</span>
+                </div>
               )}
             </div>
           </div>
-
-          {/* Right mini stats */}
-          <div className="grid grid-cols-4 gap-3 min-w-[520px] max-w-full">
-            <MiniStat title="Ativos" value={String(totalLeads)} sub="Leads no radar" />
-            <MiniStat title="Quentes" value={String(hotLeads.length)} sub="Alta urgência" />
-            <MiniStat title="Health" value={String(avgHealth)} sub="média 0–100" />
-            <MiniStat title="SLA" value={`${slaMin} min`} sub="estimativa" />
-          </div>
-        </div>
-
-        {/* Tasks + Prediction */}
-        <div className="p-6 grid grid-cols-1 xl:grid-cols-[1.6fr_1fr] gap-6">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            {tasks.map((t) => (
-              <div
-                key={t.id}
-                className="rounded-2xl border border-white/10 bg-black/30 p-4 hover:bg-white/[0.04] transition"
-              >
-                <div className="flex items-center justify-between gap-3">
-                  <div className="flex items-center gap-2">
-                    <div className="h-6 w-6 rounded-xl bg-emerald-500/10 border border-emerald-400/20 flex items-center justify-center">
-                      <div className="h-2.5 w-2.5 rounded-full bg-emerald-400" />
-                    </div>
-                    <p className="text-white font-semibold">{t.title}</p>
-                  </div>
-                  <span className="text-[11px] px-2 py-1 rounded-full bg-white/5 border border-white/10 text-gray-300">
-                    {t.count} leads
-                  </span>
-                </div>
-
-                <p className="text-gray-400 text-sm mt-3 leading-relaxed">
-                  {t.desc}
-                </p>
-
-                <div className="mt-4 flex items-center justify-between gap-3">
-                  <button
-                    onClick={t.action}
-                    className="h-10 px-4 rounded-2xl border border-white/10 bg-white/5 hover:bg-white/10 transition text-sm font-semibold text-white"
-                  >
-                    Destacar no mapa
-                  </button>
-
-                  <span className="text-[11px] text-gray-600">
-                    impacta risco/intenção
-                  </span>
-                </div>
-              </div>
-            ))}
-          </div>
-
-          <div className="rounded-2xl border border-white/10 bg-black/30 overflow-hidden">
-            <div className="p-5 border-b border-white/10">
-              <p className="text-xs text-gray-500">Previsão (MVP)</p>
-              <div className="mt-2 flex items-center justify-between gap-4 flex-wrap">
-                <div>
-                  <p className="text-3xl font-extrabold text-white">
-                    R$ {predictedRevenue.toLocaleString("pt-BR")}
-                  </p>
-                  <p className="text-gray-500 text-sm mt-1">
-                    Receita esperada se executar o plano.
-                  </p>
-                </div>
-
-                <button
-                  onClick={executePlan}
-                  className="h-10 px-4 rounded-2xl border border-[#f57f17]/30 bg-[#f57f17]/10 hover:bg-[#f57f17]/15 transition text-sm font-semibold text-white flex items-center gap-2"
-                >
-                  <Target className="w-4 h-4 text-[#f57f17]" />
-                  +65% conversão em “prontos”
-                </button>
-              </div>
-            </div>
-
-            {riskLeads.length > 0 && (
-              <div className="p-5 bg-[#f59e0b]/10 border-t border-[#f59e0b]/20">
-                <div className="flex items-center gap-3">
-                  <div className="h-10 w-10 rounded-2xl bg-[#f59e0b]/15 border border-[#f59e0b]/25 flex items-center justify-center">
-                    <AlertTriangle className="w-5 h-5 text-[#f59e0b]" />
-                  </div>
-                  <div>
-                    <p className="text-white font-semibold">
-                      {riskLeads.length} leads esfriando
-                    </p>
-                    <p className="text-gray-300 text-sm mt-0.5">
-                      Se não tocar agora, você perde. O plano já prioriza isso.
-                    </p>
-                  </div>
-                </div>
-              </div>
-            )}
-          </div>
-        </div>
+        )}
       </div>
 
-      {/* Map */}
+      {/* ============ PAINEL DE AÇÃO ============ */}
+      {showActionPanel && highlightedLeads.length > 0 && (
+        <div className="rounded-[28px] border border-[#f57f17]/30 bg-gradient-to-br from-[#f57f17]/10 to-transparent backdrop-blur-xl overflow-hidden">
+          <div className="p-4 border-b border-[#f57f17]/20 flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="h-10 w-10 rounded-xl bg-[#f57f17]/15 border border-[#f57f17]/25 flex items-center justify-center">
+                <Users className="w-5 h-5 text-[#f57f17]" />
+              </div>
+              <div>
+                <h3 className="text-white font-bold">Leads Selecionados</h3>
+                <p className="text-gray-400 text-xs">{highlightedLeads.length} para ação</p>
+              </div>
+            </div>
+            <button onClick={() => setShowActionPanel(false)} className="h-8 w-8 rounded-lg border border-white/10 bg-white/5 hover:bg-white/10 flex items-center justify-center">
+              <X className="w-4 h-4 text-gray-400" />
+            </button>
+          </div>
+
+          <div className="max-h-[280px] overflow-y-auto divide-y divide-white/5">
+            {highlightedLeads.map((lead) => {
+              const temp = lead.health_score || 50;
+              return (
+                <div key={lead.id} className="px-4 py-3 hover:bg-white/[0.02] transition flex items-center justify-between gap-4">
+                  <div className="flex items-center gap-3 min-w-0">
+                    <div className={["h-10 w-10 rounded-xl border flex items-center justify-center text-sm font-bold flex-shrink-0",
+                      temp >= 70 ? "bg-emerald-500/20 border-emerald-500/40 text-emerald-300" :
+                      temp >= 40 ? "bg-yellow-500/20 border-yellow-500/40 text-yellow-300" :
+                      "bg-red-500/20 border-red-500/40 text-red-300"
+                    ].join(" ")}>
+                      {temp}
+                    </div>
+                    <div className="min-w-0">
+                      <p className="text-white font-medium truncate">{lead.name || fmtPhone(lead.phone)}</p>
+                      <p className="text-gray-500 text-xs">{lead.stage || "curioso"}</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2 flex-shrink-0">
+                    <button onClick={() => props?.onOpenConversation?.(lead)} className="h-8 px-3 rounded-lg border border-white/10 bg-white/5 hover:bg-white/10 text-xs text-white flex items-center gap-1.5">
+                      <MessageSquare className="w-3.5 h-3.5" /> Chat
+                    </button>
+                    <button onClick={() => props?.onSendFollowUp?.(lead)} className="h-8 px-3 rounded-lg border border-[#f57f17]/30 bg-[#f57f17]/10 hover:bg-[#f57f17]/20 text-xs text-white flex items-center gap-1.5">
+                      <Phone className="w-3.5 h-3.5 text-[#f57f17]" /> FUP
+                    </button>
+                    <button onClick={() => props?.onMarkAsWon?.(lead)} className="h-8 px-3 rounded-lg border border-emerald-500/30 bg-emerald-500/10 hover:bg-emerald-500/20 text-xs text-white flex items-center gap-1.5">
+                      <Trophy className="w-3.5 h-3.5 text-emerald-400" /> Won
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* ============ MAPA EMOCIONAL ============ */}
       <EmotionMap2D
         leads={leads as any}
         height={460}
         highlightLeadIds={highlightLeadIds}
         onClearHighlights={clearHighlights}
-        onOpenConversation={(lead) => {
-          // MVP: só feedback no console no demo
-          console.log("Abrir conversa:", lead);
-        }}
-        onSendFollowUp={(lead) => {
-          console.log("Enviar follow-up:", lead);
-        }}
-        onMarkAsWon={(lead) => {
-          console.log("Marcar como ganho:", lead);
-        }}
+        onOpenConversation={(lead) => props?.onOpenConversation?.(lead)}
+        onSendFollowUp={(lead) => props?.onSendFollowUp?.(lead)}
+        onMarkAsWon={(lead) => props?.onMarkAsWon?.(lead)}
       />
 
-      {/* Insights / Recommendations */}
+      {/* ============ PIPELINE VISUAL ============ */}
+      <div className="rounded-[28px] border border-white/10 bg-white/[0.03] backdrop-blur-xl overflow-hidden">
+        <div className="p-6 border-b border-white/10 flex items-center justify-between">
+          <div>
+            <h3 className="text-white font-bold">Pipeline</h3>
+            <p className="text-gray-500 text-sm">Distribuição por estágio emocional</p>
+          </div>
+          <div className="text-xs text-gray-500">
+            <span className="text-white font-semibold">{totalLeads}</span> leads
+          </div>
+        </div>
+
+        <div className="p-6">
+          {/* Barras horizontais estilo progress */}
+          <div className="space-y-4">
+            {FUNNEL_STAGES.map((stage) => {
+              const count = stageCounts[stage.key] || 0;
+              const percent = totalLeads > 0 ? (count / totalLeads) * 100 : 0;
+              const Icon = stage.icon;
+
+              return (
+                <button
+                  key={stage.key}
+                  onClick={() => filterByStage(stage.key)}
+                  className="w-full group"
+                >
+                  <div className="flex items-center gap-4">
+                    {/* Ícone */}
+                    <div className={`h-10 w-10 rounded-xl bg-gradient-to-br ${stage.gradient} flex items-center justify-center flex-shrink-0 shadow-lg group-hover:scale-105 transition`}>
+                      <Icon className="w-5 h-5 text-white" />
+                    </div>
+
+                    {/* Label e barra */}
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center justify-between mb-1.5">
+                        <span className="text-sm text-gray-300 font-medium group-hover:text-white transition">{stage.label}</span>
+                        <div className="flex items-center gap-2">
+                          <span className="text-lg font-bold text-white">{count}</span>
+                          <span className="text-xs text-gray-600">{Math.round(percent)}%</span>
+                        </div>
+                      </div>
+
+                      {/* Barra de progresso */}
+                      <div className="h-2 bg-white/5 rounded-full overflow-hidden">
+                        <div
+                          className={`h-full bg-gradient-to-r ${stage.gradient} rounded-full transition-all duration-500 group-hover:opacity-80`}
+                          style={{ width: `${Math.max(percent, 2)}%` }}
+                        />
+                      </div>
+                    </div>
+
+                    {/* Arrow */}
+                    <ChevronRight className="w-5 h-5 text-gray-700 group-hover:text-[#f57f17] group-hover:translate-x-1 transition-all flex-shrink-0" />
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+
+      {/* ============ INSIGHTS ============ */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <GlassCard
-          title="Insights rápidos"
-          subtitle="Resumo do que está acontecendo agora"
-        >
-          {loading ? (
-            <p className="text-gray-400">Carregando métricas...</p>
-          ) : error ? (
-            <p className="text-red-400">
-              Erro ao carregar métricas: {String(error)}
-            </p>
-          ) : (
-            <div className="space-y-4">
-              <InsightItem
-                title="Oportunidade imediata"
-                value={
-                  readyLeads.length > 0
-                    ? `${readyLeads.length} leads em estágio PRONTO`
-                    : "Sem leads prontos ainda"
-                }
-              />
-
-              <InsightItem
-                title="Urgência do funil"
-                value={
-                  hotLeads.length > 0
-                    ? `${hotLeads.length} leads com alta urgência`
-                    : "Sem urgências altas agora"
-                }
-              />
-
-              <InsightItem
-                title="Tendência"
-                value={
-                  avgHealth >= 70
-                    ? "Funil saudável (alta chance de conversão)"
-                    : avgHealth >= 45
-                    ? "Funil médio (precisa de follow-up)"
-                    : "Funil fraco (ajustar abordagem e oferta)"
-                }
-              />
-            </div>
-          )}
+        <GlassCard title="Insights" subtitle="O que está acontecendo">
+          <div className="space-y-3">
+            <InsightItem label="Oportunidade" value={readyLeads.length > 0 ? `${readyLeads.length} leads prontos para fechar` : "Sem leads prontos"} good={readyLeads.length > 0} />
+            <InsightItem label="Urgência" value={hotLeads.length > 0 ? `${hotLeads.length} leads com alta urgência` : "Sem urgências"} good={false} />
+            <InsightItem label="Saúde" value={avgHealth >= 60 ? "Funil saudável" : avgHealth >= 40 ? "Funil médio" : "Funil precisa atenção"} good={avgHealth >= 60} />
+          </div>
         </GlassCard>
 
-        <GlassCard
-          title="Ações recomendadas"
-          subtitle="O que fazer para melhorar conversão"
-        >
+        <GlassCard title="Ações Recomendadas" subtitle="Próximos passos">
           <div className="space-y-3">
-            <ActionItem
-              title="1) Foco em leads prontos"
-              desc="Crie uma fila automática de follow-up + agenda de call rápida."
-            />
-            <ActionItem
-              title="2) Destravar céticos"
-              desc="Responda com prova social + cases + oferta com risco reduzido."
-            />
-            <ActionItem
-              title="3) Sensíveis a preço"
-              desc="Ofereça 2 opções (parcela vs à vista) e destaque ROI imediato."
-            />
-            <ActionItem
-              title="4) Frustrados"
-              desc="Priorizar suporte humano ou mensagem empática antes de ofertar."
-            />
+            <ActionItem title="Foco em prontos" desc="Follow-up imediato com CTA de call" />
+            <ActionItem title="Destravar céticos" desc="Prova social e cases de sucesso" />
+            <ActionItem title="Sensíveis a preço" desc="Mostrar ROI e opções de pagamento" />
           </div>
         </GlassCard>
       </div>
-
-      {/* Debug demo */}
-      {demoMode && (
-        <div className="text-xs text-gray-600">
-          DEMO: plano seleciona sempre leads reais. Ex:{" "}
-          <span className="text-gray-400">
-            {planIds.slice(0, 3).join(", ")}...
-          </span>
-        </div>
-      )}
     </div>
   );
 }
 
-// ------------------------------------------------------
-// Subcomponents
-// ------------------------------------------------------
-function MiniStat({
-  title,
-  value,
-  sub,
-}: {
-  title: string;
-  value: string;
-  sub: string;
-}) {
+function MiniStat({ title, value, color }: { title: string; value: number | string; color: string }) {
   return (
-    <div className="rounded-2xl border border-white/10 bg-black/30 p-4">
-      <p className="text-xs text-gray-500">{title}</p>
-      <p className="text-2xl font-extrabold text-white mt-1">{value}</p>
-      <p className="text-[11px] text-gray-600 mt-1">{sub}</p>
+    <div className="rounded-xl border border-white/10 bg-black/30 px-4 py-3 text-center">
+      <p className="text-xs text-gray-500 mb-1">{title}</p>
+      <p className={`text-xl font-bold ${color}`}>{value}</p>
     </div>
   );
 }
 
-function InsightItem({ title, value }: { title: string; value: string }) {
+function InsightItem({ label, value, good }: { label: string; value: string; good: boolean }) {
   return (
-    <div className="rounded-2xl border border-gray-800 bg-black/40 px-4 py-3">
-      <p className="text-sm text-gray-400">{title}</p>
-      <p className="text-white font-semibold mt-1">{value}</p>
+    <div className="flex items-center justify-between gap-4 px-4 py-3 rounded-xl border border-white/5 bg-black/20">
+      <span className="text-gray-400 text-sm">{label}</span>
+      <span className={`text-sm font-medium ${good ? "text-emerald-400" : "text-gray-300"}`}>{value}</span>
     </div>
   );
 }
 
 function ActionItem({ title, desc }: { title: string; desc: string }) {
   return (
-    <div className="rounded-2xl border border-gray-800 bg-black/40 px-4 py-3 hover:border-[#f57f17]/30 transition-all">
-      <p className="text-white font-semibold">{title}</p>
-      <p className="text-gray-500 text-sm mt-1">{desc}</p>
+    <div className="px-4 py-3 rounded-xl border border-white/5 bg-black/20 hover:border-[#f57f17]/20 transition">
+      <p className="text-white font-medium text-sm">{title}</p>
+      <p className="text-gray-500 text-xs mt-0.5">{desc}</p>
     </div>
   );
 }

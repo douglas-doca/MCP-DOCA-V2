@@ -158,4 +158,3 @@ class Logger {
 export const logger = new Logger();
 // Exportar classe
 export { Logger };
-//# sourceMappingURL=logger.js.map

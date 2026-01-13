@@ -8,18 +8,26 @@ import {
   Wand2,
   Clock,
   AlertTriangle,
-  BadgeCheck,
   MessageSquare,
+  Send,
+  X,
+  CheckCircle2,
+  Target,
+  Zap,
+  ChevronRight,
+  Phone,
 } from "lucide-react";
 
 import { isDemoMode, getDemoData } from "../mock";
+
+// ============ TYPES ============
 
 type Conv = {
   id: string;
   lead_id?: string;
   phone?: string;
   name?: string | null;
-  status?: "open" | "closed" | string;
+  status?: string;
   updated_at?: string;
   created_at?: string;
   last_message?: string;
@@ -39,22 +47,16 @@ type Msg = {
 type Lead = {
   id: string;
   phone: string;
-  name: string | null;
-  health_score: number;
-  stage: string;
-  urgency_level: "low" | "normal" | "high" | "critical";
-  conversion_probability: number;
+  name?: string | null;
+  health_score?: number;
+  stage?: string;
+  urgency_level?: "low" | "normal" | "high" | "critical" | string;
+  conversion_probability?: number;
   tags?: string[];
-  emotion_profile?: any;
   updated_at?: string;
+  score?: number;
+  status?: string;
 };
-
-type FollowUpStage =
-  | "reativacao"
-  | "valor"
-  | "objecoes"
-  | "fechamento"
-  | "nutricao";
 
 type FollowUp = {
   id: string;
@@ -62,498 +64,223 @@ type FollowUp = {
   goal: string;
   timing: string;
   text: string;
-  tags: string[];
-  confidence?: number; // 0..1
-  stage?: FollowUpStage;
+  confidence: number;
+  stage: string;
 };
 
-function isoToTimeAgo(iso?: string) {
-  if (!iso) return "-";
+type Props = {
+  conversations?: any[];
+  leads?: any[];
+  onSendFollowUp?: (lead: any, message: string) => void;
+  onOpenConversation?: (lead: any) => void;
+};
+
+// ============ HELPERS ============
+
+function timeAgo(iso?: string) {
+  if (!iso) return "—";
   const ms = Date.now() - new Date(iso).getTime();
   const mins = Math.max(0, Math.floor(ms / 60000));
   if (mins < 60) return `${mins}m`;
   const h = Math.floor(mins / 60);
-  if (h < 48) return `${h}h`;
+  if (h < 24) return `${h}h`;
   const d = Math.floor(h / 24);
   return `${d}d`;
 }
 
-function clamp(n: number, a: number, b: number) {
-  return Math.max(a, Math.min(b, n));
-}
-
-function pick<T>(arr: T[]) {
-  return arr[Math.floor(Math.random() * arr.length)];
+function fmtPhone(phone: string) {
+  const digits = (phone || "").replace(/\D/g, "");
+  if (digits.length < 10) return phone;
+  const d = digits.startsWith("55") ? digits.slice(2) : digits;
+  return `(${d.slice(0, 2)}) ${d.slice(2, 7)}-${d.slice(7, 11)}`;
 }
 
 function emotionLabel(e?: string) {
   const m: Record<string, string> = {
-    ready: "Pronto",
-    excited: "Empolgado",
-    curious: "Curioso",
-    skeptical: "Cético",
-    frustrated: "Frustrado",
-    anxious: "Ansioso",
-    price_sensitive: "Preço",
-    neutral: "Neutro",
+    ready: "Pronto", excited: "Empolgado", curious: "Curioso",
+    skeptical: "Cético", frustrated: "Frustrado", price_sensitive: "Preço", neutral: "Neutro",
   };
-  if (!e) return "—";
-  return m[e] || e;
+  return m[e || ""] || e || "—";
 }
 
-function urgencyBadge(u?: string) {
-  const base =
-    "inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-[11px] font-semibold";
-  if (u === "critical")
-    return (
-      <span className={`${base} border-red-500/20 bg-red-500/10 text-red-300`}>
-        <AlertTriangle className="w-3.5 h-3.5" />
-        Crítico
-      </span>
-    );
-  if (u === "high")
-    return (
-      <span
-        className={`${base} border-[#f57f17]/25 bg-[#f57f17]/10 text-[#f57f17]`}
-      >
-        <Sparkles className="w-3.5 h-3.5" />
-        Alto
-      </span>
-    );
-  if (u === "low")
-    return (
-      <span className={`${base} border-white/10 bg-white/5 text-gray-300`}>
-        Baixo
-      </span>
-    );
-  return (
-    <span className={`${base} border-white/10 bg-white/5 text-gray-300`}>
-      Normal
-    </span>
-  );
-}
-
-function stageLabel(stage?: string) {
+function stageLabel(s?: string) {
   const m: Record<string, string> = {
-    pronto: "Pronto",
-    empolgado: "Empolgado",
-    curioso: "Curioso",
-    "sensível_preço": "Sensível a preço",
-    cético: "Cético",
-    frustrado: "Frustrado",
+    pronto: "Pronto", empolgado: "Empolgado", curioso: "Curioso",
+    "sensível_preço": "Preço", cético: "Cético", frustrado: "Frustrado",
   };
-  if (!stage) return "—";
-  return m[stage] || stage;
+  return m[s || ""] || s || "—";
 }
 
-function buildConversationSummary(messages: Msg[]) {
-  const joined = messages
-    .slice(-12)
-    .map((m) => `${m.from === "lead" ? "Cliente" : "Agente"}: ${m.text}`)
-    .join("\n");
+// ============ FOLLOW-UP GENERATOR ============
 
-  const text = joined.toLowerCase();
-  const objections: string[] = [];
-  if (text.includes("caro") || text.includes("preço") || text.includes("valor"))
-    objections.push("Preço / orçamento");
-  if (
-    text.includes("não acredito") ||
-    text.includes("robô") ||
-    text.includes("funciona")
-  )
-    objections.push("Ceticismo / confiança");
-  if (text.includes("integr") || text.includes("api") || text.includes("crm"))
-    objections.push("Integração / técnico");
-  if (
-    text.includes("ninguém responde") ||
-    text.includes("demora") ||
-    text.includes("bagunça")
-  )
-    objections.push("Experiência / frustração");
-  if (text.includes("urgente") || text.includes("hoje") || text.includes("agora"))
-    objections.push("Urgência");
-
-  const intent =
-    text.includes("fechar") || text.includes("contrato") || text.includes("pagamento")
-      ? "Fechamento / compra"
-      : text.includes("call") || text.includes("reunião") || text.includes("agenda")
-      ? "Agendamento"
-      : text.includes("como funciona") || text.includes("dá pra") || text.includes("integr")
-      ? "Dúvida / qualificação"
-      : text.includes("caro") || text.includes("preço") || text.includes("valor")
-      ? "Comparação de preço"
-      : "Atendimento / triagem";
-
-  const nextStep =
-    intent === "Fechamento / compra"
-      ? "Enviar proposta + link e confirmar dados"
-      : intent === "Agendamento"
-      ? "Sugerir 2 horários e enviar link"
-      : intent === "Comparação de preço"
-      ? "Ancorar ROI + oferecer 2 opções (mensal/anual)"
-      : "Perguntas rápidas de qualificação + prova social";
-
-  return {
-    intent,
-    objections: objections.length ? objections : ["—"],
-    nextStep,
-  };
-}
-
-function inferStageFromLeadOrEmotion(lead?: Lead | null, conv?: Conv | null): string {
-  return (
-    lead?.stage ||
-    (conv?.current_emotion ? conv.current_emotion : "curioso") ||
-    "curioso"
-  );
-}
-
-function mapFollowUpStageFromEmotion(stage: string): FollowUpStage {
-  const s = (stage || "").toLowerCase();
-
-  if (s.includes("pronto") || s.includes("ready")) return "fechamento";
-  if (s.includes("frustr") || s.includes("problem")) return "objecoes";
-  if (s.includes("cético") || s.includes("skept")) return "objecoes";
-  if (s.includes("preço") || s.includes("price")) return "valor";
-  if (s.includes("curioso") || s.includes("curious")) return "valor";
-  if (s.includes("empolgado") || s.includes("excited")) return "fechamento";
-
-  return "reativacao";
-}
-
-function generateFollowUps(opts: {
-  lead?: Lead | null;
-  conv?: Conv | null;
-  messages: Msg[];
-}): FollowUp[] {
-  const lead = opts.lead;
-  const conv = opts.conv;
-  const summary = buildConversationSummary(opts.messages);
-
-  const name = (lead?.name || conv?.name || "aí") as string;
-  const stage = inferStageFromLeadOrEmotion(lead, conv);
+function generateFollowUps(lead: Lead | null, conv: Conv | null, messages: Msg[]): FollowUp[] {
+  const name = lead?.name || conv?.name || "aí";
+  const stage = (lead?.stage || conv?.current_emotion || "curioso").toLowerCase();
   const urg = lead?.urgency_level || "normal";
+  const isUrgent = urg === "high" || urg === "critical";
 
-  const baseOpeners = [
-    `Oi ${name}!`,
-    `Fala ${name}!`,
-    `Oi, ${name} 😊`,
-    `Olá ${name}! Tudo certo?`,
-  ];
+  const openers = [`Oi ${name}!`, `Fala ${name}!`, `Olá ${name}!`, `E aí ${name}!`];
+  const opener = openers[Math.floor(Math.random() * openers.length)];
 
-  const softCTA = [
-    "Quer que eu te mande as opções por aqui?",
-    "Posso te mostrar um caminho rápido pra isso agora?",
-    "Se fizer sentido, te mando os próximos passos.",
-    "Quer que eu te ajude a decidir hoje?",
-  ];
+  const followups: FollowUp[] = [];
 
-  const priceFU: FollowUp[] = [
-    {
-      id: "fu-price-1",
-      stage: "valor",
-      confidence: 0.86,
-      title: "Valor — Ancorar ROI",
-      goal: "Converter objeção de preço em comparação de valor",
-      timing: urg === "high" || urg === "critical" ? "Hoje" : "Em 2–4h",
-      text:
-        `${pick(baseOpeners)} Vi que você está comparando preço. ` +
-        `Pra ficar justo: com seu volume, normalmente a DOCA reduz tempo de resposta e aumenta conversão. ` +
-        `Quantos leads/mês e quantos atendentes hoje? Eu simulo o ROI rapidinho.`,
-      tags: ["preço", "roi", "qualificação"],
-    },
-    {
-      id: "fu-price-2",
-      stage: "valor",
-      confidence: 0.80,
-      title: "Valor — 2 opções (mensal vs anual)",
-      goal: "Dar escolha e remover atrito de pagamento",
-      timing: "Em 1 dia",
-      text:
-        `${pick(baseOpeners)} Pra facilitar, posso te mandar 2 opções: ` +
-        `1) mensal (flexível) e 2) anual (com desconto). ` +
-        `${pick(softCTA)}`,
-      tags: ["preço", "oferta", "fechamento"],
-    },
-  ];
-
-  const skepticalFU: FollowUp[] = [
-    {
-      id: "fu-skept-1",
-      stage: "objecoes",
-      confidence: 0.86,
-      title: "Objeções — Prova + teste assistido",
-      goal: "Gerar confiança e reduzir risco percebido",
-      timing: urg === "high" ? "Hoje" : "Em 4–8h",
-      text:
-        `${pick(baseOpeners)} Totalmente justo ser pé no chão. ` +
-        `Pra não ficar no “achismo”, eu te mostro 2 cases reais + fazemos um teste assistido. ` +
-        `Qual seu maior medo: ficar robótico, errar info ou não converter?`,
-      tags: ["cético", "prova_social", "teste"],
-    },
-    {
-      id: "fu-skept-2",
-      stage: "objecoes",
-      confidence: 0.78,
-      title: "Objeções — Demo rápida",
-      goal: "Mostrar na prática o tom humano",
-      timing: "Em 1 dia",
-      text:
-        `${pick(baseOpeners)} Se você topar, eu faço uma demo em 10min com seu exemplo real ` +
-        `(uma objeção comum do seu cliente) e você vê a resposta “humana” funcionando.`,
-      tags: ["demo", "tom_de_voz", "confiança"],
-    },
-  ];
-
-  const frustratedFU: FollowUp[] = [
-    {
-      id: "fu-frus-1",
-      stage: "objecoes",
-      confidence: 0.88,
-      title: "Objeções — Reparação + prioridade",
-      goal: "Desarmar tensão e recuperar controle",
-      timing: "Hoje",
-      text:
-        `${pick(baseOpeners)} Você tem razão — isso não é experiência aceitável. ` +
-        `Eu vou priorizar seu caso agora. Me diz em 1 frase o que você precisa resolver primeiro, ` +
-        `e eu já te guio no passo a passo.`,
-      tags: ["frustrado", "suporte", "prioridade"],
-    },
-    {
-      id: "fu-frus-2",
-      stage: "valor",
-      confidence: 0.82,
-      title: "Valor — Ação objetiva",
-      goal: "Transformar emoção em ação clara",
-      timing: "Em 2–4h",
-      text:
-        `${pick(baseOpeners)} Só pra eu não te fazer perder tempo: ` +
-        `1) seu objetivo é captar leads? 2) responder rápido? 3) agendar? ` +
-        `Com isso eu te mando a configuração ideal em 3 passos.`,
-      tags: ["triagem", "setup", "resolver"],
-    },
-  ];
-
-  const readyFU: FollowUp[] = [
-    {
-      id: "fu-ready-1",
+  // Baseado no estágio
+  if (stage.includes("pronto") || stage.includes("ready")) {
+    followups.push({
+      id: "fu-1",
+      title: "Fechamento direto",
+      goal: "Encaminhar contrato/pagamento",
+      timing: "Agora",
+      confidence: 0.92,
       stage: "fechamento",
-      confidence: 0.90,
-      title: "Fechamento — Direto ao ponto",
-      goal: "Encaminhar contrato/pagamento com clareza",
-      timing: "Hoje",
-      text:
-        `${pick(baseOpeners)} Perfeito — pra fechar hoje, só preciso de 2 infos: ` +
-        `1) plano (mensal/anual) e 2) CNPJ/razão social pra contrato. ` +
-        `Te mando o link assim que me confirmar.`,
-      tags: ["fechamento", "contrato", "pagamento"],
-    },
-    {
-      id: "fu-ready-2",
-      stage: "fechamento",
-      confidence: 0.80,
-      title: "Fechamento — Onboarding rápido",
-      goal: "Diminuir atrito do pós-venda",
+      text: `${opener} Perfeito! Pra fechar hoje, preciso de: 1) plano (mensal/anual) e 2) CNPJ ou CPF pro contrato. Te mando o link assim que confirmar.`,
+    });
+    followups.push({
+      id: "fu-2",
+      title: "Onboarding rápido",
+      goal: "Reduzir atrito pós-venda",
       timing: "Após pagamento",
-      text:
-        `${pick(baseOpeners)} Assim que confirmar, eu já te mando o checklist do onboarding (leva 15min) ` +
-        `e em seguida a gente ativa a IA com seu tom de voz.`,
-      tags: ["onboarding", "setup", "ativação"],
-    },
-  ];
-
-  const curiousFU: FollowUp[] = [
-    {
-      id: "fu-cur-1",
-      stage: "valor",
-      confidence: 0.86,
-      title: "Valor — Qualificação rápida",
-      goal: "Entender contexto e encaixar a oferta",
-      timing: urg === "high" ? "Hoje" : "Em 2–6h",
-      text:
-        `${pick(baseOpeners)} Pra te orientar certo: ` +
-        `1) qual seu tipo de negócio? 2) quantos leads/mês? 3) qual seu maior gargalo hoje? ` +
-        `Com isso eu te digo exatamente se faz sentido e qual caminho mais rápido.`,
-      tags: ["qualificação", "diagnóstico", "gargalo"],
-    },
-    {
-      id: "fu-cur-2",
+      confidence: 0.85,
       stage: "fechamento",
-      confidence: 0.72,
-      title: "Fechamento — Agendamento",
-      goal: "Mover para call e acelerar decisão",
+      text: `${opener} Assim que confirmar, já te mando o checklist do onboarding (leva 15min) e ativamos a IA com seu tom de voz.`,
+    });
+  } else if (stage.includes("cético") || stage.includes("skept")) {
+    followups.push({
+      id: "fu-1",
+      title: "Prova social + teste",
+      goal: "Gerar confiança",
+      timing: isUrgent ? "Agora" : "Em 4h",
+      confidence: 0.88,
+      stage: "objeções",
+      text: `${opener} Totalmente justo ser pé no chão. Pra não ficar no "achismo", te mostro 2 cases reais e fazemos um teste assistido. Qual seu maior receio: ficar robótico, errar info ou não converter?`,
+    });
+    followups.push({
+      id: "fu-2",
+      title: "Demo rápida",
+      goal: "Mostrar tom humano na prática",
       timing: "Em 1 dia",
-      text:
-        `${pick(baseOpeners)} Se preferir, a gente resolve em uma call curta. ` +
-        `Você prefere 09:30 ou 10:00?`,
-      tags: ["agenda", "call", "próximo_passo"],
-    },
-  ];
-
-  const nurtureFU: FollowUp[] = [
-    {
-      id: "fu-nurt-1",
-      stage: "nutricao",
-      confidence: 0.72,
-      title: "Nutrição — Conteúdo útil",
-      goal: "Manter aquecido com leveza",
-      timing: "Em 2 dias",
-      text:
-        `Fala aí! Vou te mandar um guia rápido com 3 práticas que aumentam conversão no WhatsApp ` +
-        `(resposta em até 2min, perguntas certas e follow-ups). Quer que eu envie aqui?`,
-      tags: ["conteúdo", "dicas", "nutrição"],
-    },
-    {
-      id: "fu-nurt-2",
-      stage: "reativacao",
       confidence: 0.78,
-      title: "Reativação — Toque leve",
-      goal: "Retomar contato e gerar resposta",
-      timing: "Hoje",
-      text:
-        `Oi, aí 😊 Passando rapidinho pra saber se ficou alguma dúvida. ` +
-        `Se fizer sentido, eu te mando os próximos passos em 1 minuto 😄`,
-      tags: ["reativação", "leve"],
-    },
-  ];
+      stage: "objeções",
+      text: `${opener} Se topar, faço uma demo em 10min com um exemplo real seu (uma objeção comum do seu cliente) e você vê funcionando.`,
+    });
+  } else if (stage.includes("preço") || stage.includes("price")) {
+    followups.push({
+      id: "fu-1",
+      title: "Ancorar ROI",
+      goal: "Converter objeção de preço em valor",
+      timing: isUrgent ? "Agora" : "Em 2h",
+      confidence: 0.86,
+      stage: "valor",
+      text: `${opener} Vi que você está comparando preço. Pra ficar justo: com seu volume, a DOCA normalmente reduz tempo de resposta e aumenta conversão. Quantos leads/mês e quantos atendentes hoje? Simulo o ROI rapidinho.`,
+    });
+    followups.push({
+      id: "fu-2",
+      title: "2 opções de pagamento",
+      goal: "Dar escolha e remover atrito",
+      timing: "Em 1 dia",
+      confidence: 0.80,
+      stage: "valor",
+      text: `${opener} Pra facilitar: 1) mensal (flexível) e 2) anual (com desconto). Quer que eu mande as duas opções?`,
+    });
+  } else if (stage.includes("frustr")) {
+    followups.push({
+      id: "fu-1",
+      title: "Reparação + prioridade",
+      goal: "Desarmar tensão",
+      timing: "Agora",
+      confidence: 0.90,
+      stage: "objeções",
+      text: `${opener} Você tem razão, isso não é experiência aceitável. Vou priorizar seu caso agora. Me diz em 1 frase o que precisa resolver primeiro.`,
+    });
+  } else {
+    // Curioso / padrão
+    followups.push({
+      id: "fu-1",
+      title: "Qualificação rápida",
+      goal: "Entender contexto",
+      timing: isUrgent ? "Agora" : "Em 2h",
+      confidence: 0.86,
+      stage: "valor",
+      text: `${opener} Pra te orientar certo: 1) qual seu tipo de negócio? 2) quantos leads/mês? 3) qual seu maior gargalo hoje?`,
+    });
+    followups.push({
+      id: "fu-2",
+      title: "Agendamento",
+      goal: "Mover para call",
+      timing: "Em 1 dia",
+      confidence: 0.75,
+      stage: "fechamento",
+      text: `${opener} Se preferir, a gente resolve em uma call curta. Você prefere às 09:30 ou 10:00?`,
+    });
+  }
 
-  const pool =
-    stage === "sensível_preço" || stage === "price_sensitive"
-      ? [...priceFU]
-      : stage === "cético" || stage === "skeptical"
-      ? [...skepticalFU]
-      : stage === "frustrado" || stage === "frustrated"
-      ? [...frustratedFU]
-      : stage === "pronto" || stage === "ready"
-      ? [...readyFU]
-      : [...curiousFU];
+  // Nutrição (sempre adiciona)
+  followups.push({
+    id: "fu-nurt",
+    title: "Reativação leve",
+    goal: "Retomar contato",
+    timing: "Em 2 dias",
+    confidence: 0.72,
+    stage: "nutrição",
+    text: `Oi! Passando rapidinho pra saber se ficou alguma dúvida. Se fizer sentido, te mando os próximos passos em 1 minuto.`,
+  });
 
-  const extra: FollowUp = {
-    id: "fu-context-1",
-    stage: "valor",
-    confidence: 0.86,
-    title: "Valor — Amarrar próximo passo",
-    goal: "Fechar loop e reduzir fricção",
-    timing: "Em 4–12h",
-    text:
-      `${pick(baseOpeners)} Pelo que entendi, a intenção aqui é: **${summary.intent}**. ` +
-      `O próximo passo que eu recomendo é: **${summary.nextStep}**. ` +
-      `Quer que eu faça isso com você agora?`,
-    tags: ["contexto", "next_step", "clareza"],
-  };
-
-  const outBase = [pool[0], pool[1] || pool[0], extra];
-
-  // + uma nutrição leve pra completar o board
-  const out = [...outBase, ...nurtureFU].slice(0, 5);
-
-  // IDs únicos no refresh
-  return out.map((x, idx) => ({
-    ...x,
-    id: `${x.id}-${idx}-${Date.now()}`,
-    confidence: x.confidence ?? 0.78,
-    stage: x.stage ?? mapFollowUpStageFromEmotion(stage),
-  }));
+  return followups;
 }
 
-// Meta do board (labels premium)
-const STAGE_META: Record<
-  FollowUpStage,
-  { label: string; hint: string; badge: string }
-> = {
-  reativacao: {
-    label: "Reativação",
-    hint: "Retomar contato e gerar resposta",
-    badge: "border-sky-500/20 bg-sky-500/10 text-sky-300",
-  },
-  valor: {
-    label: "Valor",
-    hint: "Entregar clareza e prova",
-    badge: "border-violet-500/20 bg-violet-500/10 text-violet-300",
-  },
-  objecoes: {
-    label: "Objeções",
-    hint: "Responder dúvidas e reduzir atrito",
-    badge: "border-amber-500/20 bg-amber-500/10 text-amber-300",
-  },
-  fechamento: {
-    label: "Fechamento",
-    hint: "Mover para decisão e CTA",
-    badge: "border-emerald-500/20 bg-emerald-500/10 text-emerald-300",
-  },
-  nutricao: {
-    label: "Nutrição",
-    hint: "Manter aquecido com leveza",
-    badge: "border-white/10 bg-white/5 text-gray-200",
-  },
-};
+// ============ COMPONENT ============
 
-function confBadge(conf?: number) {
-  const p = Math.round(clamp(conf ?? 0.78, 0, 1) * 100);
-  return (
-    <span className="inline-flex items-center gap-1 rounded-full border border-emerald-500/20 bg-emerald-500/10 px-2.5 py-1 text-[11px] font-semibold text-emerald-300">
-      <BadgeCheck className="w-3.5 h-3.5" />
-      {p}% conf.
-    </span>
-  );
-}
-
-export default function AIAnalysisPage() {
+export default function AIAnalysisPage(props: Props) {
   const demoMode = isDemoMode();
-  const demo = demoMode ? getDemoData() : null;
+  const demo = useMemo(() => (demoMode ? getDemoData() : null), [demoMode]);
 
-  const [loading, setLoading] = useState(true);
   const [conversations, setConversations] = useState<Conv[]>([]);
   const [leads, setLeads] = useState<Lead[]>([]);
-  const [selectedConv, setSelectedConv] = useState<Conv | null>(null);
   const [messages, setMessages] = useState<Msg[]>([]);
-  const [search, setSearch] = useState("");
+  const [selectedConv, setSelectedConv] = useState<Conv | null>(null);
   const [followups, setFollowups] = useState<FollowUp[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState("");
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  
+  // Modal de envio
+  const [sendModal, setSendModal] = useState<{ lead: Lead; message: string } | null>(null);
+  const [sending, setSending] = useState(false);
 
+  // Lead selecionado
   const selectedLead = useMemo(() => {
     if (!selectedConv) return null;
-    const byLead = selectedConv.lead_id
-      ? leads.find((l) => l.id === selectedConv.lead_id)
-      : null;
-    if (byLead) return byLead;
-
     const phone = (selectedConv.phone || "").replace("@c.us", "");
-    return leads.find((l) => l.phone === phone) || null;
+    return leads.find(l => l.phone.replace("@c.us", "") === phone || l.id === selectedConv.lead_id) || null;
   }, [selectedConv, leads]);
 
-  async function loadConversations() {
-    setLoading(true);
+  // ============ LOAD DATA ============
 
+  async function loadData() {
+    setLoading(true);
     try {
       if (demoMode && demo) {
         setConversations(demo.conversations || []);
         setLeads(demo.leads || []);
-
         const first = demo.conversations?.[0] || null;
         setSelectedConv(first);
-
         if (first) {
-          const msgs = (demo.messages || []).filter(
-            (m: any) => m.conversation_id === first.id
-          );
+          const msgs = (demo.messages || []).filter((m: any) => m.conversation_id === first.id);
           setMessages(msgs);
-          setFollowups(generateFollowUps({ lead: null, conv: first, messages: msgs }));
+          setFollowups(generateFollowUps(null, first, msgs));
         }
-
         setLoading(false);
         return;
       }
 
-      // PROD: puxa do webhook server
-      const convRes = await fetch(`/api/conversations?limit=80`);
-      const convs = (await convRes.json()) as any[];
-
-      const mapped: Conv[] = (convs || []).map((c) => ({
+      // Real mode
+      const convRes = await fetch("/api/conversations?limit=100");
+      const convs = await convRes.json();
+      const mappedConvs: Conv[] = (convs || []).map((c: any) => ({
         id: c.id,
         lead_id: c.lead_id,
         phone: c.phone || c.chat_id || "",
-        name: c.name || null,
+        name: c.name,
         status: c.status,
         updated_at: c.updated_at,
         created_at: c.created_at,
@@ -562,35 +289,27 @@ export default function AIAnalysisPage() {
         temperature: c.temperature,
         tags: c.tags || [],
       }));
+      setConversations(mappedConvs);
 
-      setConversations(mapped);
+      const leadsRes = await fetch("/api/leads?limit=200");
+      const ls = await leadsRes.json();
+      const mappedLeads: Lead[] = (ls || []).map((l: any) => ({
+        id: l.id,
+        phone: (l.phone || "").replace("@c.us", ""),
+        name: l.name,
+        health_score: l.health_score ?? l.score ?? 50,
+        stage: l.stage ?? "curioso",
+        urgency_level: l.urgency_level ?? "normal",
+        conversion_probability: l.conversion_probability ?? 0.4,
+        tags: l.tags || [],
+        updated_at: l.updated_at,
+      }));
+      setLeads(mappedLeads);
 
-      // leads (opcional)
-      try {
-        const leadsRes = await fetch(`/api/leads?limit=200`);
-        const ls = (await leadsRes.json()) as any[];
-        const mappedLeads: Lead[] = (ls || []).map((l) => ({
-          id: l.id,
-          phone: (l.phone || "").replace("@c.us", ""),
-          name: l.name || null,
-          health_score: l.health_score ?? l.score ?? 50,
-          stage: l.stage ?? "curioso",
-          urgency_level: l.urgency_level ?? "normal",
-          conversion_probability: l.conversion_probability ?? 0.4,
-          tags: l.tags || [],
-          updated_at: l.updated_at,
-        }));
-        setLeads(mappedLeads);
-      } catch {
-        setLeads([]);
-      }
-
-      const first = mapped?.[0] || null;
+      const first = mappedConvs[0] || null;
       setSelectedConv(first);
-      if (first) {
-        await loadMessages(first);
-      }
-
+      if (first) await loadMessages(first);
+      
       setLoading(false);
     } catch (e) {
       console.error(e);
@@ -607,109 +326,113 @@ export default function AIAnalysisPage() {
       if (demoMode && demo) {
         const msgs = (demo.messages || []).filter((m: any) => m.conversation_id === conv.id);
         setMessages(msgs);
-        setFollowups(generateFollowUps({ lead: selectedLead, conv, messages: msgs }));
+        const lead = leads.find(l => l.id === conv.lead_id) || null;
+        setFollowups(generateFollowUps(lead, conv, msgs));
         return;
       }
 
-      const res = await fetch(
-        `/api/messages?conversation_id=${encodeURIComponent(conv.id)}&limit=80`
-      );
-      const data = (await res.json()) as any[];
-
-      const mapped: Msg[] = (data || []).map((m) => ({
+      const res = await fetch(`/api/messages?conversation_id=${encodeURIComponent(conv.id)}&limit=50`);
+      const data = await res.json();
+      const mapped: Msg[] = (data || []).map((m: any) => ({
         id: m.id,
         conversation_id: m.conversation_id,
-        from:
-          m.role === "user"
-            ? "lead"
-            : m.role === "assistant"
-            ? "agent"
-            : (m.from || "lead"),
+        from: m.role === "user" ? "lead" : m.role === "assistant" ? "agent" : (m.from || "lead"),
         text: m.content || m.text || "",
         created_at: m.timestamp || m.created_at || new Date().toISOString(),
       }));
-
       setMessages(mapped);
-      setFollowups(generateFollowUps({ lead: selectedLead, conv, messages: mapped }));
+      
+      const lead = leads.find(l => l.phone.replace("@c.us", "") === (conv.phone || "").replace("@c.us", "")) || null;
+      setFollowups(generateFollowUps(lead, conv, mapped));
     } catch (e) {
       console.error(e);
-      setMessages([]);
-      setFollowups(generateFollowUps({ lead: selectedLead, conv, messages: [] }));
     }
   }
 
-  useEffect(() => {
-    loadConversations();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  useEffect(() => { loadData(); }, []);
+
+  // ============ FILTERED CONVS ============
 
   const filteredConvs = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    if (!q) return conversations;
-
-    return conversations.filter((c) => {
-      const a = (c.name || "").toLowerCase();
-      const b = (c.phone || "").toLowerCase();
-      const d = (c.last_message || "").toLowerCase();
-      return a.includes(q) || b.includes(q) || d.includes(q);
+    // Filtra conversas inválidas (broadcast, lid, grupos, landing, sessões)
+    const valid = conversations.filter(c => {
+      const phone = (c.phone || "").toLowerCase();
+      const name = (c.name || "").toLowerCase();
+      
+      // Filtros de exclusão
+      if (phone.includes("@broadcast")) return false;
+      if (phone.includes("@lid")) return false;
+      if (phone.includes("@g.us")) return false;
+      if (phone.includes("status@broadcast")) return false;
+      if (phone.includes("landing:")) return false;
+      if (name.includes("landing:")) return false;
+      if (phone.includes("sess_")) return false;
+      if (name.includes("sess_")) return false;
+      if (!phone || phone.length < 8) return false;
+      
+      // Deve ter pelo menos alguns dígitos (telefone real)
+      const digits = phone.replace(/\D/g, "");
+      if (digits.length < 8) return false;
+      
+      return true;
     });
+
+    const q = search.trim().toLowerCase();
+    if (!q) return valid;
+    return valid.filter(c => 
+      (c.name || "").toLowerCase().includes(q) ||
+      (c.phone || "").toLowerCase().includes(q) ||
+      (c.last_message || "").toLowerCase().includes(q)
+    );
   }, [conversations, search]);
 
-  const summary = useMemo(() => buildConversationSummary(messages), [messages]);
+  // ============ ACTIONS ============
 
-  const followupsByStage = useMemo(() => {
-    const m = new Map<FollowUpStage, FollowUp[]>();
-    (followups || []).forEach((fu) => {
-      const st = (fu.stage || "reativacao") as FollowUpStage;
-      if (!m.has(st)) m.set(st, []);
-      m.get(st)!.push(fu);
-    });
-
-    // ordena por confidence desc
-    for (const [k, v] of m.entries()) {
-      m.set(
-        k,
-        [...v].sort((a, b) => (b.confidence ?? 0) - (a.confidence ?? 0))
-      );
-    }
-
-    return m;
-  }, [followups]);
-
-  const stages: FollowUpStage[] = useMemo(
-    () => ["reativacao", "valor", "objecoes", "fechamento", "nutricao"],
-    []
-  );
-
-  const primaryStage = useMemo(() => {
-    if (!selectedConv) return "reativacao" as FollowUpStage;
-    const st = inferStageFromLeadOrEmotion(selectedLead, selectedConv);
-    return mapFollowUpStageFromEmotion(st);
-  }, [selectedConv, selectedLead]);
-
-  async function copy(text: string, id: string) {
+  async function copyText(text: string, id: string) {
     try {
       await navigator.clipboard.writeText(text);
       setCopiedId(id);
-      setTimeout(() => setCopiedId(null), 1200);
+      setTimeout(() => setCopiedId(null), 1500);
     } catch {
-      const ta = document.createElement("textarea");
-      ta.value = text;
-      document.body.appendChild(ta);
-      ta.select();
-      document.execCommand("copy");
-      document.body.removeChild(ta);
       setCopiedId(id);
-      setTimeout(() => setCopiedId(null), 1200);
+      setTimeout(() => setCopiedId(null), 1500);
     }
   }
 
-  const headerRight = (
-    <span className="inline-flex items-center gap-2 rounded-full border border-[#f57f17]/20 bg-[#f57f17]/10 px-3 py-1.5 text-xs font-semibold text-[#f57f17]">
-      <Sparkles className="w-4 h-4" />
-      Follow-ups IA (board)
-    </span>
-  );
+  function openSendModal(fu: FollowUp) {
+    if (!selectedLead) return;
+    setSendModal({ lead: selectedLead, message: fu.text });
+  }
+
+  async function confirmSend() {
+    if (!sendModal) return;
+    setSending(true);
+    
+    try {
+      // Chama callback se existir
+      if (props.onSendFollowUp) {
+        props.onSendFollowUp(sendModal.lead, sendModal.message);
+      } else {
+        // Fallback: envia direto via API
+        await fetch("/api/send", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            phone: sendModal.lead.phone,
+            message: sendModal.message,
+          }),
+        });
+      }
+      
+      setSendModal(null);
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setSending(false);
+    }
+  }
+
+  // ============ RENDER ============
 
   return (
     <div className="space-y-6">
@@ -721,104 +444,100 @@ export default function AIAnalysisPage() {
             Análise IA
           </h2>
           <p className="text-sm text-gray-500">
-            IA analisa conversas e sugere follow-ups ideais por estágio, emoção e urgência.
+            Follow-ups inteligentes baseados em estágio, emoção e urgência
           </p>
         </div>
 
         <div className="flex items-center gap-2">
-          {headerRight}
+          <span className="px-3 py-1.5 rounded-full bg-[#f57f17]/10 border border-[#f57f17]/20 text-[#f57f17] text-xs font-semibold flex items-center gap-1.5">
+            <Sparkles className="w-3.5 h-3.5" />
+            IA Ativa
+          </span>
           <button
-            onClick={loadConversations}
-            className="h-10 px-4 rounded-2xl border border-white/10 bg-white/5 hover:bg-white/10 transition-all flex items-center gap-2 text-sm font-semibold text-gray-200"
-            title="Atualizar"
+            onClick={loadData}
+            className="h-10 px-4 rounded-xl border border-white/10 bg-white/5 hover:bg-white/10 text-sm font-medium text-gray-200 flex items-center gap-2"
           >
-            <RefreshCw className="w-4 h-4 text-[#f57f17]" />
+            <RefreshCw className="w-4 h-4" />
             Atualizar
           </button>
         </div>
       </div>
 
-      {/* Main */}
-      <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
-        {/* Left: queue */}
-        <div className="rounded-2xl border border-white/10 bg-white/5 backdrop-blur-xl shadow-[0_0_0_1px_rgba(255,255,255,0.06)] overflow-hidden">
-          <div className="p-5 border-b border-white/10 flex items-center justify-between gap-3">
+      {/* Main Grid */}
+      <div className="grid grid-cols-1 xl:grid-cols-12 gap-6">
+        {/* Left: Conversation List */}
+        <div className="xl:col-span-4 rounded-[28px] border border-white/10 bg-white/5 backdrop-blur-xl overflow-hidden">
+          <div className="p-4 border-b border-white/10 flex items-center justify-between gap-3">
             <div className="flex items-center gap-2">
               <MessageSquare className="w-4 h-4 text-[#f57f17]" />
-              <p className="text-white font-semibold">Fila de conversas</p>
+              <span className="text-white font-semibold">Conversas</span>
               <span className="text-xs text-gray-500">{filteredConvs.length}</span>
             </div>
+          </div>
 
+          <div className="p-3 border-b border-white/10">
             <div className="relative">
               <Search className="w-4 h-4 text-gray-500 absolute left-3 top-1/2 -translate-y-1/2" />
               <input
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
-                placeholder="Buscar por nome, número, mensagem..."
-                className="w-72 max-w-[70vw] h-10 rounded-2xl bg-black/30 border border-white/10 pl-10 pr-3 text-sm text-gray-200 placeholder:text-gray-500 outline-none focus:ring-2 focus:ring-[#f57f17] focus:border-transparent"
+                placeholder="Buscar..."
+                className="w-full h-9 rounded-xl bg-black/30 border border-white/10 pl-9 pr-3 text-sm text-gray-200 placeholder:text-gray-500 outline-none focus:border-[#f57f17]/50"
               />
             </div>
           </div>
 
-          <div className="max-h-[560px] overflow-auto">
+          <div className="max-h-[520px] overflow-auto">
             {loading ? (
-              <div className="p-6 text-gray-400">Carregando conversas...</div>
+              <div className="p-6 text-gray-500 text-center">Carregando...</div>
             ) : filteredConvs.length === 0 ? (
-              <div className="p-6 text-gray-400">Nenhuma conversa encontrada.</div>
+              <div className="p-6 text-gray-500 text-center">Nenhuma conversa</div>
             ) : (
               <div className="divide-y divide-white/5">
                 {filteredConvs.map((c) => {
                   const active = selectedConv?.id === c.id;
-                  const lead = c.lead_id ? leads.find((l) => l.id === c.lead_id) : null;
+                  const lead = leads.find(l => l.id === c.lead_id || l.phone.replace("@c.us", "") === (c.phone || "").replace("@c.us", ""));
+                  const health = lead?.health_score || 50;
+                  const displayName = c.name || lead?.name || null;
+                  const displayPhone = fmtPhone((c.phone || "").replace("@c.us", ""));
 
                   return (
                     <button
                       key={c.id}
                       onClick={() => loadMessages(c)}
-                      className={[
-                        "w-full text-left px-5 py-4 transition-all",
-                        active ? "bg-[#f57f17]/10" : "hover:bg-white/5",
-                      ].join(" ")}
+                      className={`w-full text-left px-4 py-3 transition-all ${active ? "bg-[#f57f17]/10" : "hover:bg-white/5"}`}
                     >
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="min-w-0">
-                          <div className="flex items-center gap-2">
-                            <p className="text-white font-semibold truncate">
-                              {c.name || lead?.name || "Lead sem nome"}
-                            </p>
-                            <span className="text-[11px] text-gray-500 truncate">
-                              {(c.phone || "").replace("@c.us", "")}
-                            </span>
-                          </div>
-
-                          <p className="text-sm text-gray-400 mt-1 line-clamp-2">
-                            {c.last_message || "—"}
-                          </p>
-
-                          <div className="mt-2 flex items-center gap-2 flex-wrap">
-                            <span className="inline-flex items-center gap-1 rounded-full border border-white/10 bg-white/5 px-2.5 py-1 text-[11px] font-semibold text-gray-200">
-                              <Clock className="w-3.5 h-3.5 text-gray-400" />
-                              {isoToTimeAgo(c.updated_at || c.created_at)}
-                            </span>
-
-                            <span className="inline-flex items-center gap-1 rounded-full border border-white/10 bg-white/5 px-2.5 py-1 text-[11px] font-semibold text-gray-200">
-                              {emotionLabel(c.current_emotion)}
-                            </span>
-
-                            {lead?.urgency_level ? urgencyBadge(lead.urgency_level) : null}
-                          </div>
+                      <div className="flex items-start gap-3">
+                        {/* Health indicator */}
+                        <div className={`h-10 w-10 rounded-xl border flex items-center justify-center text-sm font-bold flex-shrink-0 ${
+                          health >= 70 ? "bg-emerald-500/20 border-emerald-500/40 text-emerald-300" :
+                          health >= 40 ? "bg-yellow-500/20 border-yellow-500/40 text-yellow-300" :
+                          "bg-red-500/20 border-red-500/40 text-red-300"
+                        }`}>
+                          {health}
                         </div>
 
-                        <div className="flex flex-col items-end gap-2">
-                          <span className="inline-flex items-center gap-1 rounded-full border border-white/10 bg-white/5 px-2.5 py-1 text-[11px] font-semibold text-gray-300">
-                            {stageLabel(lead?.stage)}
-                          </span>
-                          {lead?.conversion_probability != null && (
-                            <span className="inline-flex items-center gap-1 rounded-full border border-emerald-500/20 bg-emerald-500/10 px-2.5 py-1 text-[11px] font-semibold text-emerald-300">
-                              <BadgeCheck className="w-3.5 h-3.5" />
-                              {Math.round(clamp(lead.conversion_probability, 0, 1) * 100)}%
-                            </span>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2">
+                            <p className="text-white font-medium truncate">
+                              {displayName || displayPhone}
+                            </p>
+                            <span className="text-[10px] text-gray-600">{timeAgo(c.updated_at)}</span>
+                          </div>
+                          {displayName && (
+                            <p className="text-[11px] text-gray-500">{displayPhone}</p>
                           )}
+                          <p className="text-xs text-gray-500 truncate mt-0.5">{c.last_message || "—"}</p>
+                          <div className="mt-1.5 flex items-center gap-1.5">
+                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-white/5 text-gray-400">
+                              {stageLabel(lead?.stage)}
+                            </span>
+                            {lead?.urgency_level === "high" || lead?.urgency_level === "critical" ? (
+                              <span className="text-[10px] px-1.5 py-0.5 rounded bg-orange-500/20 text-orange-300">
+                                Urgente
+                              </span>
+                            ) : null}
+                          </div>
                         </div>
                       </div>
                     </button>
@@ -829,221 +548,217 @@ export default function AIAnalysisPage() {
           </div>
         </div>
 
-        {/* Right: analysis */}
-        <div className="rounded-2xl border border-white/10 bg-white/5 backdrop-blur-xl shadow-[0_0_0_1px_rgba(255,255,255,0.06)] overflow-hidden">
-          <div className="p-5 border-b border-white/10 flex items-start justify-between gap-4 flex-wrap">
-            <div>
-              <p className="text-white font-semibold">Follow-ups sugeridos</p>
-              <p className="text-sm text-gray-500 mt-1">
-                Baseado na conversa selecionada, estágio e urgência (board).
-              </p>
+        {/* Right: Analysis + Follow-ups */}
+        <div className="xl:col-span-8 space-y-6">
+          {!selectedConv ? (
+            <div className="rounded-[28px] border border-white/10 bg-white/5 p-12 text-center">
+              <BrainCircuit className="w-12 h-12 text-gray-700 mx-auto mb-4" />
+              <p className="text-gray-400">Selecione uma conversa para análise</p>
             </div>
+          ) : (
+            <>
+              {/* Lead Info Card */}
+              <div className="rounded-[28px] border border-white/10 bg-white/5 backdrop-blur-xl p-5">
+                <div className="flex items-start justify-between gap-4 flex-wrap">
+                  <div className="flex items-center gap-4">
+                    <div className={`h-14 w-14 rounded-2xl border-2 flex items-center justify-center text-xl font-bold ${
+                      (selectedLead?.health_score || 50) >= 70 ? "bg-emerald-500/20 border-emerald-500 text-emerald-300" :
+                      (selectedLead?.health_score || 50) >= 40 ? "bg-yellow-500/20 border-yellow-500 text-yellow-300" :
+                      "bg-red-500/20 border-red-500 text-red-300"
+                    }`}>
+                      {selectedLead?.health_score || 50}
+                    </div>
+                    <div>
+                      <h3 className="text-white font-bold text-lg">
+                        {selectedConv.name || selectedLead?.name || fmtPhone(selectedConv.phone || "")}
+                      </h3>
+                      <p className="text-gray-500 text-sm">{fmtPhone(selectedConv.phone || "")}</p>
+                    </div>
+                  </div>
 
-            <button
-              onClick={() =>
-                setFollowups(
-                  generateFollowUps({
-                    lead: selectedLead,
-                    conv: selectedConv,
-                    messages,
-                  })
-                )
-              }
-              className="h-10 px-4 rounded-2xl border border-[#f57f17]/20 bg-[#f57f17]/10 hover:bg-[#f57f17]/15 transition-all flex items-center gap-2 text-sm font-semibold text-[#f57f17]"
-              disabled={!selectedConv}
-              title="Gerar novas sugestões"
-            >
-              <Wand2 className="w-4 h-4" />
-              Gerar novas
-            </button>
-          </div>
-
-          <div className="p-5 space-y-5">
-            {!selectedConv ? (
-              <div className="text-gray-400">
-                Selecione uma conversa para ver análise e follow-ups.
-              </div>
-            ) : (
-              <>
-                {/* Summary */}
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  <MiniCard title="Intenção" value={summary.intent} />
-                  <MiniCard title="Objeções" value={summary.objections.slice(0, 2).join(" • ")} />
-                  <MiniCard title="Próximo passo" value={summary.nextStep} />
-                </div>
-
-                {/* Messages preview */}
-                <div className="rounded-2xl border border-white/10 bg-black/30 p-4">
-                  <p className="text-sm font-semibold text-white">Trecho da conversa</p>
-                  <div className="mt-3 space-y-2 max-h-[160px] overflow-auto pr-1">
-                    {(messages || []).slice(-8).map((m) => (
-                      <div
-                        key={m.id}
-                        className={[
-                          "text-sm rounded-2xl px-3 py-2 border",
-                          m.from === "lead"
-                            ? "bg-white/5 border-white/10 text-gray-200"
-                            : "bg-[#f57f17]/10 border-[#f57f17]/20 text-white",
-                        ].join(" ")}
+                  <div className="flex items-center gap-3">
+                    <div className="text-right">
+                      <p className="text-xs text-gray-500">Estágio</p>
+                      <p className="text-white font-semibold">{stageLabel(selectedLead?.stage)}</p>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-xs text-gray-500">Conversão</p>
+                      <p className="text-emerald-400 font-semibold">
+                        {Math.round((selectedLead?.conversion_probability || 0.4) * 100)}%
+                      </p>
+                    </div>
+                    {selectedLead && (
+                      <button
+                        onClick={() => props.onOpenConversation?.(selectedLead)}
+                        className="h-10 px-4 rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 text-sm text-white flex items-center gap-2"
                       >
-                        <span className="text-[11px] text-gray-500 mr-2">
-                          {m.from === "lead" ? "Cliente" : "Agente"}
-                        </span>
-                        {m.text}
-                      </div>
-                    ))}
-                    {messages.length === 0 && (
-                      <p className="text-sm text-gray-500">Sem mensagens carregadas.</p>
+                        <MessageSquare className="w-4 h-4" />
+                        Abrir chat
+                      </button>
                     )}
                   </div>
                 </div>
 
-                {/* ✅ Board: prateleiras por estágio */}
-                <div className="space-y-4">
-                  {stages.map((st) => {
-                    const items = followupsByStage.get(st) || [];
-                    const meta = STAGE_META[st];
-                    const isPrimary = st === primaryStage;
+                {/* Messages preview */}
+                <div className="mt-4 rounded-xl bg-black/20 border border-white/5 p-3 max-h-[140px] overflow-auto">
+                  {messages.slice(-6).map((m) => (
+                    <div key={m.id} className={`text-sm mb-2 px-3 py-2 rounded-xl ${
+                      m.from === "lead" ? "bg-white/5 text-gray-300" : "bg-[#f57f17]/10 text-white"
+                    }`}>
+                      <span className="text-[10px] text-gray-500 mr-2">
+                        {m.from === "lead" ? "Cliente" : "Bot"}
+                      </span>
+                      {m.text.slice(0, 150)}{m.text.length > 150 ? "..." : ""}
+                    </div>
+                  ))}
+                  {messages.length === 0 && <p className="text-gray-600 text-sm">Sem mensagens</p>}
+                </div>
+              </div>
 
-                    return (
-                      <div
-                        key={st}
-                        className={[
-                          "rounded-2xl border bg-black/20 overflow-hidden transition-all",
-                          isPrimary
-                            ? "border-[#f57f17]/40 shadow-[0_0_0_1px_rgba(245,127,23,0.20)]"
-                            : "border-white/10",
-                        ].join(" ")}
-                      >
-                        {/* Header da linha */}
-                        <div
-                          className={[
-                            "p-4 border-b flex items-start justify-between gap-3",
-                            isPrimary ? "border-[#f57f17]/20" : "border-white/10",
-                          ].join(" ")}
-                        >
-                          <div>
-                            <div className="flex items-center gap-2">
-                              <span
-                                className={[
-                                  "inline-flex items-center rounded-full border px-2.5 py-1 text-[11px] font-semibold",
-                                  meta.badge,
-                                ].join(" ")}
-                              >
-                                {meta.label}
-                              </span>
+              {/* Follow-ups */}
+              <div className="rounded-[28px] border border-white/10 bg-white/5 backdrop-blur-xl overflow-hidden">
+                <div className="p-5 border-b border-white/10 flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Wand2 className="w-5 h-5 text-[#f57f17]" />
+                    <span className="text-white font-bold">Follow-ups Sugeridos</span>
+                  </div>
+                  <button
+                    onClick={() => setFollowups(generateFollowUps(selectedLead, selectedConv, messages))}
+                    className="h-9 px-3 rounded-xl border border-[#f57f17]/20 bg-[#f57f17]/10 hover:bg-[#f57f17]/20 text-xs font-semibold text-[#f57f17] flex items-center gap-1.5"
+                  >
+                    <RefreshCw className="w-3.5 h-3.5" />
+                    Regenerar
+                  </button>
+                </div>
 
-                              {isPrimary && (
-                                <span className="inline-flex items-center rounded-full border border-[#f57f17]/25 bg-[#f57f17]/10 px-2 py-0.5 text-[11px] font-semibold text-[#f57f17]">
-                                  Recomendado
-                                </span>
-                              )}
-
-                              <span className="text-[11px] text-gray-500">{items.length}</span>
-                            </div>
-                            <p className="text-xs text-gray-500 mt-1">{meta.hint}</p>
+                <div className="p-5 space-y-3">
+                  {followups.map((fu) => (
+                    <div
+                      key={fu.id}
+                      className="rounded-2xl border border-white/10 bg-black/20 p-4 hover:border-[#f57f17]/20 transition"
+                    >
+                      <div className="flex items-start justify-between gap-4 mb-3">
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <p className="text-white font-semibold">{fu.title}</p>
+                            <span className={`text-[10px] px-1.5 py-0.5 rounded ${
+                              fu.confidence >= 0.85 ? "bg-emerald-500/20 text-emerald-300" :
+                              fu.confidence >= 0.75 ? "bg-yellow-500/20 text-yellow-300" :
+                              "bg-white/10 text-gray-400"
+                            }`}>
+                              {Math.round(fu.confidence * 100)}%
+                            </span>
                           </div>
+                          <p className="text-xs text-gray-500 mt-0.5">{fu.goal}</p>
                         </div>
-
-                        {/* Cards horizontais */}
-                        <div className="p-4">
-                          {items.length === 0 ? (
-                            <div className="text-xs text-gray-500 py-6 text-center">
-                              Sem sugestões.
-                            </div>
-                          ) : (
-                            <div className="flex gap-4 overflow-x-auto pb-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-                              {items.map((fu) => (
-                                <div
-                                  key={fu.id}
-                                  className={[
-                                    "min-w-[340px] max-w-[340px] rounded-2xl border bg-black/30 p-4 hover:bg-black/40 transition-all",
-                                    isPrimary ? "border-[#f57f17]/20" : "border-white/10",
-                                  ].join(" ")}
-                                >
-                                  <div className="flex items-start justify-between gap-3">
-                                    <div className="min-w-0">
-                                      <p className="text-white font-semibold text-sm">
-                                        {fu.title}
-                                      </p>
-
-                                      <p className="text-xs text-gray-500 mt-1 line-clamp-2">
-                                        <span className="text-gray-400">Objetivo:</span>{" "}
-                                        {fu.goal}
-                                      </p>
-
-                                      <div className="mt-2 flex items-center gap-2 flex-wrap">
-                                        <span className="inline-flex items-center gap-1 text-[11px] text-gray-500">
-                                          <Clock className="w-3.5 h-3.5" />
-                                          <span className="text-gray-300 font-semibold">
-                                            {fu.timing}
-                                          </span>
-                                        </span>
-                                        {confBadge(fu.confidence)}
-                                      </div>
-                                    </div>
-                                  </div>
-
-                                  <div className="mt-3 rounded-2xl border border-white/10 bg-black/40 p-3">
-                                    <p className="text-sm text-gray-200 whitespace-pre-wrap line-clamp-5">
-                                      {fu.text}
-                                    </p>
-                                  </div>
-
-                                  <div className="mt-3 flex items-center justify-between gap-2">
-                                    <div className="flex items-center gap-2 flex-wrap">
-                                      {fu.tags.slice(0, 2).map((t) => (
-                                        <span
-                                          key={t}
-                                          className="inline-flex items-center rounded-full border border-white/10 bg-white/5 px-2 py-0.5 text-[11px] font-semibold text-gray-300"
-                                        >
-                                          {t}
-                                        </span>
-                                      ))}
-                                      {fu.tags.length > 2 && (
-                                        <span className="text-[11px] text-gray-500">
-                                          +{fu.tags.length - 2}
-                                        </span>
-                                      )}
-                                    </div>
-
-                                    <button
-                                      onClick={() => copy(fu.text, fu.id)}
-                                      className="h-9 px-3 rounded-2xl border border-white/10 bg-white/5 hover:bg-white/10 transition-all flex items-center gap-2 text-xs font-semibold text-gray-200"
-                                      title="Copiar mensagem"
-                                    >
-                                      <Copy className="w-4 h-4 text-[#f57f17]" />
-                                      {copiedId === fu.id ? "Copiado" : "Copiar"}
-                                    </button>
-                                  </div>
-                                </div>
-                              ))}
-                            </div>
-                          )}
+                        <div className="flex items-center gap-2 text-xs text-gray-500">
+                          <Clock className="w-3.5 h-3.5" />
+                          {fu.timing}
                         </div>
                       </div>
-                    );
-                  })}
-                </div>
 
-                {/* Hint */}
-                <div className="text-xs text-gray-500">
-                  *Agora está em modo heurístico (sem IA real). Depois trocamos o gerador por endpoint do backend (OpenAI) mantendo a UI.*
+                      <div className="rounded-xl bg-black/30 border border-white/5 p-3 mb-3">
+                        <p className="text-sm text-gray-200 whitespace-pre-wrap">{fu.text}</p>
+                      </div>
+
+                      <div className="flex items-center justify-between">
+                        <span className="text-[10px] px-2 py-0.5 rounded bg-white/5 text-gray-500">
+                          {fu.stage}
+                        </span>
+                        <div className="flex items-center gap-2">
+                          <button
+                            onClick={() => copyText(fu.text, fu.id)}
+                            className="h-8 px-2 rounded-lg border border-white/10 bg-white/5 hover:bg-white/10 text-xs text-gray-400 flex items-center gap-1"
+                            title="Copiar mensagem"
+                          >
+                            <Copy className="w-3.5 h-3.5" />
+                            {copiedId === fu.id ? "Copiado!" : ""}
+                          </button>
+                          <button
+                            onClick={() => openSendModal(fu)}
+                            disabled={!selectedLead}
+                            className="h-8 px-4 rounded-lg bg-gradient-to-r from-[#f57f17] to-[#ff9800] hover:opacity-90 disabled:opacity-50 text-xs font-semibold text-white flex items-center gap-1.5"
+                          >
+                            <Send className="w-3.5 h-3.5" />
+                            Enviar
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+
+                  {followups.length === 0 && (
+                    <p className="text-gray-500 text-center py-8">
+                      Nenhum follow-up gerado. Clique em "Regenerar".
+                    </p>
+                  )}
                 </div>
-              </>
-            )}
-          </div>
+              </div>
+            </>
+          )}
         </div>
       </div>
-    </div>
-  );
-}
 
-function MiniCard({ title, value }: { title: string; value: string }) {
-  return (
-    <div className="rounded-2xl border border-white/10 bg-black/30 p-4">
-      <p className="text-xs text-gray-500">{title}</p>
-      <p className="text-white font-semibold mt-1 line-clamp-2">{value}</p>
+      {/* Send Modal */}
+      {sendModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+          <div className="w-full max-w-lg rounded-[28px] border border-white/10 bg-[#0a0a0a] p-6">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-white font-bold text-lg flex items-center gap-2">
+                <Send className="w-5 h-5 text-[#f57f17]" />
+                Confirmar Envio
+              </h3>
+              <button
+                onClick={() => setSendModal(null)}
+                className="h-8 w-8 rounded-lg border border-white/10 bg-white/5 hover:bg-white/10 flex items-center justify-center"
+              >
+                <X className="w-4 h-4 text-gray-400" />
+              </button>
+            </div>
+
+            <div className="mb-4">
+              <p className="text-xs text-gray-500 mb-1">Para</p>
+              <p className="text-white font-medium">
+                {sendModal.lead.name || fmtPhone(sendModal.lead.phone)}
+              </p>
+              <p className="text-gray-500 text-sm">{fmtPhone(sendModal.lead.phone)}</p>
+            </div>
+
+            <div className="mb-6">
+              <p className="text-xs text-gray-500 mb-2">Mensagem</p>
+              <div className="rounded-xl bg-black/40 border border-white/10 p-4 max-h-[200px] overflow-auto">
+                <p className="text-sm text-gray-200 whitespace-pre-wrap">{sendModal.message}</p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-3">
+              <button
+                onClick={() => setSendModal(null)}
+                className="flex-1 h-11 rounded-xl border border-white/10 bg-white/5 hover:bg-white/10 text-sm font-medium text-gray-300"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={confirmSend}
+                disabled={sending}
+                className="flex-1 h-11 rounded-xl bg-gradient-to-r from-[#f57f17] to-[#ff9800] hover:opacity-90 disabled:opacity-50 text-sm font-semibold text-white flex items-center justify-center gap-2"
+              >
+                {sending ? (
+                  <>
+                    <RefreshCw className="w-4 h-4 animate-spin" />
+                    Enviando...
+                  </>
+                ) : (
+                  <>
+                    <Send className="w-4 h-4" />
+                    Enviar Agora
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

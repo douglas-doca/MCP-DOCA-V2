@@ -6,10 +6,17 @@ RUN apk add --no-cache tzdata
 WORKDIR /app
 
 COPY package*.json ./
-RUN npm ci --only=production
+RUN npm ci
 
-COPY dist/ ./dist/
+COPY src/ ./src/
+COPY tsconfig.json ./
+COPY tsconfig.mcp.json ./
+COPY clientes/ ./clientes/
 
+# Compilar com tsconfig.mcp.json
+RUN npx tsc -p tsconfig.mcp.json
+
+RUN npm prune --omit=dev
 RUN mkdir -p logs database
 
 CMD ["node", "dist/index.js"]

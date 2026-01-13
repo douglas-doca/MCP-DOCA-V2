@@ -38,27 +38,68 @@ type PlanItem =
 // ✅ Bot message id tracking (to distinguish human vs bot)
 // ============================================
 const BOT_SENT_IDS = new Map<string, number>();
+const BOT_ACTIVE_CHATS = new Map<string, number>(); // ✅ NOVO: chats onde o bot está enviando
 const BOT_SENT_TTL_MS = Number(process.env.WAHA_BOT_SENT_TTL_MS || 10 * 60 * 1000); // 10 min
+const BOT_ACTIVE_TTL_MS = 30_000; // 30 segundos de "proteção" após enviar
 
 function cleanupBotIds() {
   const now = Date.now();
   for (const [id, ts] of BOT_SENT_IDS.entries()) {
     if (now - ts > BOT_SENT_TTL_MS) BOT_SENT_IDS.delete(id);
   }
+  for (const [chatId, ts] of BOT_ACTIVE_CHATS.entries()) {
+    if (now - ts > BOT_ACTIVE_TTL_MS) BOT_ACTIVE_CHATS.delete(chatId);
+  }
 }
 
-export function rememberBotSentId(id?: string | null) {
-  const v = String(id || "").trim();
-  if (!v) return;
+export function rememberBotSentId(id?: string | null, chatId?: string | null) {
   cleanupBotIds();
-  BOT_SENT_IDS.set(v, Date.now());
+  
+  // Salva ID em múltiplos formatos
+  const v = String(id || "").trim();
+  if (v) {
+    BOT_SENT_IDS.set(v, Date.now());
+    // Se tem _ no ID, salva também só a parte final (alguns webhooks retornam só isso)
+    if (v.includes("_")) {
+      const parts = v.split("_");
+      BOT_SENT_IDS.set(parts[parts.length - 1], Date.now());
+    }
+  }
+  
+  // ✅ Marca o chat como "ativo" (bot enviando)
+  const chat = String(chatId || "").trim();
+  if (chat) {
+    BOT_ACTIVE_CHATS.set(chat, Date.now());
+    // Normaliza também sem @c.us/@lid
+    const phone = chat.replace(/@c\.us$|@lid$|@g\.us$/, "");
+    if (phone && phone !== chat) {
+      BOT_ACTIVE_CHATS.set(phone, Date.now());
+    }
+  }
 }
 
-export function isBotSentId(id?: string | null): boolean {
-  const v = String(id || "").trim();
-  if (!v) return false;
+export function isBotSentId(id?: string | null, chatId?: string | null): boolean {
   cleanupBotIds();
-  return BOT_SENT_IDS.has(v);
+  
+  // 1. Verifica pelo ID da mensagem
+  const v = String(id || "").trim();
+  if (v && BOT_SENT_IDS.has(v)) return true;
+  
+  // 2. Verifica se ID parcial bate
+  if (v && v.includes("_")) {
+    const parts = v.split("_");
+    if (BOT_SENT_IDS.has(parts[parts.length - 1])) return true;
+  }
+  
+  // 3. ✅ NOVO: Verifica se o chat está "ativo" (bot enviou recentemente)
+  const chat = String(chatId || "").trim();
+  if (chat && BOT_ACTIVE_CHATS.has(chat)) return true;
+  
+  // Normaliza sem sufixo
+  const phone = chat.replace(/@c\.us$|@lid$|@g\.us$/, "");
+  if (phone && phone !== chat && BOT_ACTIVE_CHATS.has(phone)) return true;
+  
+  return false;
 }
 
 export class WAHAService {
@@ -174,14 +215,14 @@ export class WAHAService {
 
     const resp = await this.request("POST", endpoint, body);
 
-    // ✅ remember bot message id so we can detect human intervention later
+    // ✅ remember bot message id + chatId so we can detect human intervention later
     const msgId =
       resp?.id?._serialized ||
       resp?._data?.id?._serialized ||
       resp?._data?.id?.id ||
       resp?.id?.id;
 
-    rememberBotSentId(msgId);
+    rememberBotSentId(msgId, chatId);
 
     return resp;
   }
@@ -216,9 +257,47 @@ export class WAHAService {
       resp?._data?.id?.id ||
       resp?.id?.id;
 
-    rememberBotSentId(msgId);
+    rememberBotSentId(msgId, chatId);
 
     return resp;
+  }
+
+  /**
+   * Envia imagem (alias para sendMedia)
+   */
+  async sendImage(chatId: string, imageUrl: string, caption?: string): Promise<any> {
+    return this.sendMedia({
+      chatId,
+      mediaUrl: imageUrl,
+      caption,
+    });
+  }
+
+  /**
+   * Busca mensagens do chat
+   */
+  async getMessages(chatId: string, limit: number = 20): Promise<any> {
+    const to = this.normalizeChatId(chatId);
+    if (!to) return [];
+
+    const endpoint = `/api/${this.config.session}/chats/${to}/messages?limit=${limit}`;
+    return this.request("GET", endpoint);
+  }
+
+  /**
+   * Verifica se número tem WhatsApp
+   */
+  async checkNumber(phone: string): Promise<any> {
+    const digits = String(phone || "").replace(/\D/g, "");
+    if (!digits) return { exists: false };
+
+    const endpoint = `/api/contacts/check-exists`;
+    const body = {
+      session: this.config.session,
+      phone: digits,
+    };
+
+    return this.request("POST", endpoint, body);
   }
 
   /**
@@ -287,6 +366,9 @@ export class WAHAService {
     if (!items || !Array.isArray(items) || items.length === 0) return;
 
     const safeItems = items.slice(0, 20);
+
+    // ✅ Pre-mark chat como ativo ANTES de enviar (evita race condition)
+    rememberBotSentId(null, to);
 
     logger.agent("WAHA sendPlanV3", { chatId: to, items: safeItems.length });
 

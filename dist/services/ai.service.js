@@ -253,4 +253,3 @@ Responda SOMENTE com o JSON, sem texto adicional.`);
 }
 // Exportar instância singleton
 export const aiService = new AIService();
-//# sourceMappingURL=ai.service.js.map

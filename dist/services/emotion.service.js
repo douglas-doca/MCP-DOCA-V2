@@ -4,6 +4,51 @@
 // ============================================
 import { logger } from '../utils/logger.js';
 import { supabaseService } from './supabase.service.js';
+// ============================================
+// DETECÇÃO DE EMOÇÕES (HEURÍSTICO)
+// ============================================
+const EMOTION_PATTERNS = {
+    skeptical: {
+        pattern: /duvido|será|não acredito|mentira|enganação|furada|falso|golpe|spam|bot|robô/i,
+        style: "Validar preocupação, ser transparente, oferecer exemplo real",
+    },
+    anxious: {
+        pattern: /urgente|rápido|agora|hoje|já|pressa|correndo|preciso muito|desesperado/i,
+        style: "Transmitir calma, dizer o próximo passo e resolver",
+    },
+    frustrated: {
+        pattern: /desisto|cansado|nada funciona|difícil|complicado|chato|irritado|problema|não aguento/i,
+        style: "Empatia genuína, reconhecer a dor, solução concreta",
+    },
+    excited: {
+        pattern: /quero|vamos|ótimo|perfeito|maravilha|top|bora|show|incrível|massa|demais/i,
+        style: "Manter energia e acelerar processo",
+    },
+    price_sensitive: {
+        pattern: /caro|valor|preço|quanto custa|custo|pagar|dinheiro|grana|investimento|orçamento/i,
+        style: "Focar em valor/ROI, sem passar preço por mensagem, pedir contexto",
+    },
+    ready: {
+        pattern: /agendar|marcar|quando|horário|dia|disponível|vamos fazer|fechar|contratar/i,
+        style: "Ir direto ao agendamento, sem enrolar",
+    },
+    curious: {
+        pattern: /como funciona|o que é|explica|me conta|quero saber|entender|conhecer/i,
+        style: "Explicar simples, usar exemplo, despertar interesse",
+    },
+};
+/**
+ * Detecta emoção de uma mensagem via heurística (regex)
+ */
+export function detectEmotion(message) {
+    const msg = (message || "").toLowerCase();
+    for (const [emotion, config] of Object.entries(EMOTION_PATTERNS)) {
+        if (config.pattern.test(msg)) {
+            return { emotion, style: config.style };
+        }
+    }
+    return { emotion: "neutral", style: "Descobrir mais sobre a pessoa, fazer perguntas abertas" };
+}
 // Mapeamento de emoções para stages do funil
 const EMOTION_TO_STAGE = {
     skeptical: 'cético',
@@ -38,7 +83,6 @@ const EMOTION_CONVERSION = {
     neutral: 0.35,
 };
 export class EmotionService {
-    // ============ Salvar Eventos de Emoção ============
     async saveEmotionEvent(event) {
         try {
             await supabaseService.request('POST', 'emotion_events', {
@@ -48,7 +92,6 @@ export class EmotionService {
                     metadata: {}
                 }
             });
-            // Atualizar emoção atual na conversa
             await supabaseService.request('PATCH', 'conversations', {
                 query: `id=eq.${event.conversation_id}`,
                 body: {
@@ -67,22 +110,16 @@ export class EmotionService {
             throw error;
         }
     }
-    // ============ Atualizar Métricas do Lead ============
     async updateLeadMetrics(leadId) {
         try {
-            // Buscar eventos de emoção do lead
             const events = await supabaseService.request('GET', 'emotion_events', {
                 query: `lead_id=eq.${leadId}&order=detected_at.desc&limit=50`
             });
             if (!events || events.length === 0)
                 return;
-            // Calcular profile emocional
             const profile = this.calculateEmotionProfile(events);
-            // Calcular health metrics
             const health = this.calculateHealthMetrics(events, profile);
-            // Determinar stage atual
             const stage = EMOTION_TO_STAGE[profile.dominant_emotion] || 'curioso';
-            // Atualizar lead
             await supabaseService.request('PATCH', 'leads', {
                 query: `id=eq.${leadId}`,
                 body: {
@@ -103,16 +140,13 @@ export class EmotionService {
             logger.error('Failed to update lead metrics', error, 'EMOTION');
         }
     }
-    // ============ Calcular Profile Emocional ============
     calculateEmotionProfile(events) {
         const distribution = {};
         const transitions = [];
-        // Contar distribuição de emoções
         events.forEach(event => {
             const emotion = event.emotion;
             distribution[emotion] = (distribution[emotion] || 0) + 1;
         });
-        // Calcular transições (simplificado - só pega últimas 10)
         for (let i = 0; i < Math.min(events.length - 1, 10); i++) {
             const from = events[i + 1].emotion;
             const to = events[i].emotion;
@@ -126,7 +160,6 @@ export class EmotionService {
                 }
             }
         }
-        // Encontrar emoção dominante
         let dominantEmotion = 'neutral';
         let maxCount = 0;
         Object.entries(distribution).forEach(([emotion, count]) => {
@@ -142,25 +175,19 @@ export class EmotionService {
             last_updated: new Date()
         };
     }
-    // ============ Calcular Health Metrics ============
     calculateHealthMetrics(events, profile) {
-        const recentEvents = events.slice(0, 10); // Últimos 10
-        // Temperatura média ponderada (eventos mais recentes pesam mais)
+        const recentEvents = events.slice(0, 10);
         let temperature = 0;
         let totalWeight = 0;
         recentEvents.forEach((event, index) => {
-            const weight = 1 / (index + 1); // Peso decrescente
+            const weight = 1 / (index + 1);
             temperature += EMOTION_TEMPERATURE[event.emotion] * weight;
             totalWeight += weight;
         });
         temperature = Math.round(temperature / totalWeight);
-        // Probabilidade de conversão baseada na emoção dominante
         const conversion_probability = EMOTION_CONVERSION[profile.dominant_emotion] || 0.35;
-        // Health score (0-100)
-        const health_score = Math.round(temperature * 0.6 + // 60% temperatura
-            conversion_probability * 100 * 0.4 // 40% probabilidade
-        );
-        // Nível de urgência
+        const health_score = Math.round(temperature * 0.6 +
+            conversion_probability * 100 * 0.4);
         let urgency_level = 'normal';
         if (profile.dominant_emotion === 'anxious' || temperature > 80) {
             urgency_level = 'high';
@@ -171,7 +198,6 @@ export class EmotionService {
         else if (temperature < 30) {
             urgency_level = 'low';
         }
-        // Pontos de fricção
         const friction_points = [];
         if (profile.dominant_emotion === 'skeptical') {
             friction_points.push('Ceticismo sobre o produto');
@@ -182,7 +208,6 @@ export class EmotionService {
         if (profile.dominant_emotion === 'price_sensitive') {
             friction_points.push('Sensibilidade a preço');
         }
-        // Sinais positivos
         const positive_signals = [];
         if (profile.dominant_emotion === 'excited') {
             positive_signals.push('Empolgação com a solução');
@@ -202,7 +227,6 @@ export class EmotionService {
             positive_signals
         };
     }
-    // ============ APIs para Dashboard ============
     async getDashboardMetrics() {
         try {
             const [leads, conversations, events] = await Promise.all([
@@ -212,17 +236,14 @@ export class EmotionService {
                     query: 'order=detected_at.desc&limit=5000'
                 })
             ]);
-            // Métricas gerais
             const totalLeads = leads?.length || 0;
             const avgHealthScore = leads?.reduce((acc, l) => acc + (l.health_score || 0), 0) / totalLeads || 0;
             const avgTemperature = conversations?.reduce((acc, c) => acc + (c.temperature || 0), 0) / (conversations?.length || 1) || 0;
-            // Distribuição por stage
             const stageDistribution = {};
             leads?.forEach((lead) => {
                 const stage = lead.stage || 'curioso';
                 stageDistribution[stage] = (stageDistribution[stage] || 0) + 1;
             });
-            // Urgências
             const urgencyDistribution = {};
             leads?.forEach((lead) => {
                 const urgency = lead.urgency_level || 'normal';
@@ -250,7 +271,6 @@ export class EmotionService {
             if (!leads || leads.length === 0) {
                 return { data: [] };
             }
-            // Mapear leads para pontos no gráfico
             const data = leads.map((lead) => {
                 const emotion = lead.emotion_profile?.dominant_emotion || 'neutral';
                 const sentiment = this.emotionToSentiment(emotion);
@@ -281,7 +301,6 @@ export class EmotionService {
             if (!leads || leads.length === 0) {
                 return { funnel: [] };
             }
-            // Contar por stage
             const stages = ['cético', 'frustrado', 'curioso', 'sensível_preço', 'empolgado', 'pronto'];
             const funnel = stages.map(stage => {
                 const count = leads.filter((l) => l.stage === stage).length;
@@ -321,9 +340,7 @@ export class EmotionService {
             return null;
         }
     }
-    // ============ Helpers ============
     emotionToSentiment(emotion) {
-        // Mapeia emoção para score de sentimento (-1 a 1)
         const sentimentMap = {
             skeptical: -0.6,
             frustrated: -0.8,
@@ -337,6 +354,4 @@ export class EmotionService {
         return sentimentMap[emotion] || 0;
     }
 }
-// Singleton
 export const emotionService = new EmotionService();
-//# sourceMappingURL=emotion.service.js.map

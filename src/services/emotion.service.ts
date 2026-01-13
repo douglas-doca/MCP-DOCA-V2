@@ -14,6 +14,55 @@ import {
   HealthMetrics 
 } from '../types/emotion.types.js';
 
+// ============================================
+// DETECÇÃO DE EMOÇÕES (HEURÍSTICO)
+// ============================================
+const EMOTION_PATTERNS: Record<string, { pattern: RegExp; style: string }> = {
+  skeptical: {
+    pattern: /duvido|será|não acredito|mentira|enganação|furada|falso|golpe|spam|bot|robô/i,
+    style: "Validar preocupação, ser transparente, oferecer exemplo real",
+  },
+  anxious: {
+    pattern: /urgente|rápido|agora|hoje|já|pressa|correndo|preciso muito|desesperado/i,
+    style: "Transmitir calma, dizer o próximo passo e resolver",
+  },
+  frustrated: {
+    pattern: /desisto|cansado|nada funciona|difícil|complicado|chato|irritado|problema|não aguento/i,
+    style: "Empatia genuína, reconhecer a dor, solução concreta",
+  },
+  excited: {
+    pattern: /quero|vamos|ótimo|perfeito|maravilha|top|bora|show|incrível|massa|demais/i,
+    style: "Manter energia e acelerar processo",
+  },
+  price_sensitive: {
+    pattern: /caro|valor|preço|quanto custa|custo|pagar|dinheiro|grana|investimento|orçamento/i,
+    style: "Focar em valor/ROI, sem passar preço por mensagem, pedir contexto",
+  },
+  ready: {
+    pattern: /agendar|marcar|quando|horário|dia|disponível|vamos fazer|fechar|contratar/i,
+    style: "Ir direto ao agendamento, sem enrolar",
+  },
+  curious: {
+    pattern: /como funciona|o que é|explica|me conta|quero saber|entender|conhecer/i,
+    style: "Explicar simples, usar exemplo, despertar interesse",
+  },
+};
+
+/**
+ * Detecta emoção de uma mensagem via heurística (regex)
+ */
+export function detectEmotion(message: string): { emotion: string; style: string } {
+  const msg = (message || "").toLowerCase();
+
+  for (const [emotion, config] of Object.entries(EMOTION_PATTERNS)) {
+    if (config.pattern.test(msg)) {
+      return { emotion, style: config.style };
+    }
+  }
+
+  return { emotion: "neutral", style: "Descobrir mais sobre a pessoa, fazer perguntas abertas" };
+}
+
 // Mapeamento de emoções para stages do funil
 const EMOTION_TO_STAGE: Record<EmotionType, LeadStage> = {
   skeptical: 'cético',
@@ -52,8 +101,6 @@ const EMOTION_CONVERSION: Record<EmotionType, number> = {
 
 export class EmotionService {
   
-  // ============ Salvar Eventos de Emoção ============
-  
   async saveEmotionEvent(event: Omit<EmotionEvent, 'id' | 'detected_at'>): Promise<void> {
     try {
       await supabaseService.request('POST', 'emotion_events', {
@@ -64,7 +111,6 @@ export class EmotionService {
         }
       });
 
-      // Atualizar emoção atual na conversa
       await supabaseService.request('PATCH', 'conversations', {
         query: `id=eq.${event.conversation_id}`,
         body: {
@@ -85,27 +131,18 @@ export class EmotionService {
     }
   }
 
-  // ============ Atualizar Métricas do Lead ============
-
   async updateLeadMetrics(leadId: string): Promise<void> {
     try {
-      // Buscar eventos de emoção do lead
       const events: any = await supabaseService.request('GET', 'emotion_events', {
         query: `lead_id=eq.${leadId}&order=detected_at.desc&limit=50`
       });
 
       if (!events || events.length === 0) return;
 
-      // Calcular profile emocional
       const profile = this.calculateEmotionProfile(events);
-      
-      // Calcular health metrics
       const health = this.calculateHealthMetrics(events, profile);
-
-      // Determinar stage atual
       const stage = EMOTION_TO_STAGE[profile.dominant_emotion] || 'curioso';
 
-      // Atualizar lead
       await supabaseService.request('PATCH', 'leads', {
         query: `id=eq.${leadId}`,
         body: {
@@ -128,19 +165,15 @@ export class EmotionService {
     }
   }
 
-  // ============ Calcular Profile Emocional ============
-
   private calculateEmotionProfile(events: any[]): EmotionProfile {
     const distribution: Record<string, number> = {};
     const transitions: Array<{from: string; to: string; count: number}> = [];
 
-    // Contar distribuição de emoções
     events.forEach(event => {
       const emotion = event.emotion;
       distribution[emotion] = (distribution[emotion] || 0) + 1;
     });
 
-    // Calcular transições (simplificado - só pega últimas 10)
     for (let i = 0; i < Math.min(events.length - 1, 10); i++) {
       const from = events[i + 1].emotion;
       const to = events[i].emotion;
@@ -155,7 +188,6 @@ export class EmotionService {
       }
     }
 
-    // Encontrar emoção dominante
     let dominantEmotion: EmotionType = 'neutral';
     let maxCount = 0;
     
@@ -174,32 +206,26 @@ export class EmotionService {
     };
   }
 
-  // ============ Calcular Health Metrics ============
-
   private calculateHealthMetrics(events: any[], profile: EmotionProfile): HealthMetrics {
-    const recentEvents = events.slice(0, 10); // Últimos 10
+    const recentEvents = events.slice(0, 10);
     
-    // Temperatura média ponderada (eventos mais recentes pesam mais)
     let temperature = 0;
     let totalWeight = 0;
     
     recentEvents.forEach((event, index) => {
-      const weight = 1 / (index + 1); // Peso decrescente
+      const weight = 1 / (index + 1);
       temperature += EMOTION_TEMPERATURE[event.emotion as EmotionType] * weight;
       totalWeight += weight;
     });
     temperature = Math.round(temperature / totalWeight);
 
-    // Probabilidade de conversão baseada na emoção dominante
     const conversion_probability = EMOTION_CONVERSION[profile.dominant_emotion] || 0.35;
 
-    // Health score (0-100)
     const health_score = Math.round(
-      temperature * 0.6 + // 60% temperatura
-      conversion_probability * 100 * 0.4 // 40% probabilidade
+      temperature * 0.6 +
+      conversion_probability * 100 * 0.4
     );
 
-    // Nível de urgência
     let urgency_level: UrgencyLevel = 'normal';
     if (profile.dominant_emotion === 'anxious' || temperature > 80) {
       urgency_level = 'high';
@@ -209,7 +235,6 @@ export class EmotionService {
       urgency_level = 'low';
     }
 
-    // Pontos de fricção
     const friction_points: string[] = [];
     if (profile.dominant_emotion === 'skeptical') {
       friction_points.push('Ceticismo sobre o produto');
@@ -221,7 +246,6 @@ export class EmotionService {
       friction_points.push('Sensibilidade a preço');
     }
 
-    // Sinais positivos
     const positive_signals: string[] = [];
     if (profile.dominant_emotion === 'excited') {
       positive_signals.push('Empolgação com a solução');
@@ -243,8 +267,6 @@ export class EmotionService {
     };
   }
 
-  // ============ APIs para Dashboard ============
-
   async getDashboardMetrics(): Promise<any> {
     try {
       const [leads, conversations, events]: any[] = await Promise.all([
@@ -255,21 +277,18 @@ export class EmotionService {
         })
       ]);
 
-      // Métricas gerais
       const totalLeads = leads?.length || 0;
       const avgHealthScore = leads?.reduce((acc: number, l: any) => 
         acc + (l.health_score || 0), 0) / totalLeads || 0;
       const avgTemperature = conversations?.reduce((acc: number, c: any) => 
         acc + (c.temperature || 0), 0) / (conversations?.length || 1) || 0;
 
-      // Distribuição por stage
       const stageDistribution: Record<string, number> = {};
       leads?.forEach((lead: any) => {
         const stage = lead.stage || 'curioso';
         stageDistribution[stage] = (stageDistribution[stage] || 0) + 1;
       });
 
-      // Urgências
       const urgencyDistribution: Record<string, number> = {};
       leads?.forEach((lead: any) => {
         const urgency = lead.urgency_level || 'normal';
@@ -301,7 +320,6 @@ export class EmotionService {
         return { data: [] };
       }
 
-      // Mapear leads para pontos no gráfico
       const data = leads.map((lead: any) => {
         const emotion = lead.emotion_profile?.dominant_emotion || 'neutral';
         const sentiment = this.emotionToSentiment(emotion);
@@ -337,7 +355,6 @@ export class EmotionService {
         return { funnel: [] };
       }
 
-      // Contar por stage
       const stages = ['cético', 'frustrado', 'curioso', 'sensível_preço', 'empolgado', 'pronto'];
       const funnel = stages.map(stage => {
         const count = leads.filter((l: any) => l.stage === stage).length;
@@ -383,10 +400,7 @@ export class EmotionService {
     }
   }
 
-  // ============ Helpers ============
-
   private emotionToSentiment(emotion: string): number {
-    // Mapeia emoção para score de sentimento (-1 a 1)
     const sentimentMap: Record<string, number> = {
       skeptical: -0.6,
       frustrated: -0.8,
@@ -402,5 +416,4 @@ export class EmotionService {
   }
 }
 
-// Singleton
 export const emotionService = new EmotionService();

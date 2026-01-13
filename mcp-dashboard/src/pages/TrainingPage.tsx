@@ -1,4 +1,3 @@
-// src/pages/TrainingPage.tsx
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   Brain,
@@ -7,33 +6,38 @@ import {
   Search,
   Plus,
   Trash2,
-  Tag,
   BookOpen,
   TestTube2,
   Loader2,
   CheckCircle2,
   XCircle,
-  Info,
   ChevronDown,
-  Filter,
+  Upload,
+  Download,
+  FileText,
+  Sparkles,
+  Copy,
+  Play,
+  MessageSquare,
+  Zap,
+  Target,
+  Users,
+  TrendingUp,
+  X,
+  Edit3,
+  BarChart3,
+  Clock,
+  Send,
+  Star,
+  Quote,
+  Award,
+  ToggleLeft,
+  ToggleRight,
   ImageIcon,
+  User,
 } from "lucide-react";
 
-/**
- * TrainingPage (Premium SaaS)
- * - Prompt Editor (settings key=agent_prompt)
- * - Knowledge Base CRUD (/api/knowledge)
- * - Playground (mockado por enquanto)
- *
- * + ✅ Prova Social Library (Supabase storage + tabela)
- */
-
-import SocialProofLibrary from "../components/SocialProofLibrary"; // ✅ adicionamos
-
-// -----------------------------------------------------
-// Types
-// -----------------------------------------------------
-type SettingResponse = { key: string; value: string };
+// ============ TYPES ============
 
 type KnowledgeItem = {
   id?: string;
@@ -44,53 +48,148 @@ type KnowledgeItem = {
   tags?: string[] | null;
   created_at?: string;
   updated_at?: string;
+  usage_count?: number;
 };
 
-type PlaygroundContext = {
-  stage: string;
-  emotion: string;
-  channel: string;
+type PromptTemplate = {
+  id: string;
+  name: string;
+  description: string;
+  prompt: string;
+  tags: string[];
 };
 
-// -----------------------------------------------------
-// API Helpers
-// -----------------------------------------------------
+type SocialProof = {
+  id: string;
+  type: "depoimento" | "case" | "metrica";
+  title: string;
+  content: string;
+  author?: string;
+  company?: string;
+  result?: string;
+  image?: string; // URL da imagem
+  active: boolean;
+  created_at?: string;
+};
+
+// ============ PROMPT TEMPLATES ============
+
+const PROMPT_TEMPLATES: PromptTemplate[] = [
+  {
+    id: "vendas",
+    name: "Vendas Consultivas",
+    description: "Foco em entender necessidades e fechar com valor",
+    tags: ["vendas", "consultivo"],
+    prompt: `Você é um especialista em vendas consultivas da DOCA AI.
+
+OBJETIVO: Entender as necessidades do lead e guiá-lo para uma decisão de compra.
+
+REGRAS:
+- Nunca seja agressivo ou pushy
+- Faça perguntas para entender o contexto
+- Apresente benefícios, não features
+- Use prova social quando apropriado
+- Crie urgência genuína, não artificial
+
+TOM DE VOZ:
+- Profissional mas humano
+- Empático e consultivo
+- Direto ao ponto
+- Sem emojis excessivos
+
+ESTRUTURA DE RESPOSTA:
+1. Reconheça a dúvida/necessidade
+2. Responda de forma clara
+3. Faça uma pergunta de qualificação OU apresente próximo passo`,
+  },
+  {
+    id: "suporte",
+    name: "Suporte ao Cliente",
+    description: "Resolver problemas com empatia e eficiência",
+    tags: ["suporte", "atendimento"],
+    prompt: `Você é um especialista em suporte da DOCA AI.
+
+OBJETIVO: Resolver problemas rapidamente mantendo o cliente satisfeito.
+
+REGRAS:
+- Priorize resolver o problema
+- Se não souber, escale para humano
+- Nunca invente informações
+- Documente o problema para melhoria
+
+TOM DE VOZ:
+- Empático e paciente
+- Técnico quando necessário
+- Sempre ofereça alternativas
+
+ESTRUTURA:
+1. Reconheça o problema
+2. Apresente a solução
+3. Confirme se resolveu`,
+  },
+  {
+    id: "qualificacao",
+    name: "Qualificação de Leads",
+    description: "Identificar leads qualificados rapidamente",
+    tags: ["vendas", "qualificação"],
+    prompt: `Você é um especialista em qualificação de leads da DOCA AI.
+
+OBJETIVO: Identificar se o lead tem fit com nossa solução.
+
+CRITÉRIOS DE QUALIFICAÇÃO:
+- Budget: Tem orçamento para investir?
+- Authority: É o decisor?
+- Need: Tem uma dor real que resolvemos?
+- Timeline: Precisa resolver em quanto tempo?
+
+PERGUNTAS CHAVE:
+- Qual seu maior desafio hoje em [área]?
+- Quantos leads/mês vocês recebem?
+- Quem mais participa da decisão?
+- Qual prazo ideal para implementar?
+
+TOM: Curioso, consultivo, sem pressão.`,
+  },
+  {
+    id: "reativacao",
+    name: "Reativação de Leads",
+    description: "Reengajar leads frios com valor",
+    tags: ["nutrição", "reativação"],
+    prompt: `Você é especialista em reativação de leads da DOCA AI.
+
+OBJETIVO: Reengajar leads que esfriaram oferecendo valor.
+
+ESTRATÉGIAS:
+- Compartilhe novidades relevantes
+- Ofereça conteúdo educativo
+- Mencione cases de sucesso recentes
+- Crie FOMO genuíno
+
+NUNCA:
+- Seja invasivo ou repetitivo
+- Pressione por resposta
+- Ignore o contexto anterior
+
+TOM: Amigável, informativo, sem cobrança.`,
+  },
+];
+
+// ============ API HELPERS ============
+
 async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> {
   const res = await fetch(url, {
-    headers: {
-      Accept: "application/json",
-      ...(init?.headers || {}),
-    },
+    headers: { Accept: "application/json", ...(init?.headers || {}) },
     ...init,
   });
-
-  const contentType = res.headers.get("content-type") || "";
-
-  // quando rota errada -> volta HTML
-  if (contentType.includes("text/html")) {
-    const text = await res.text();
-    throw new Error(
-      `Endpoint retornou HTML (provável rota errada): ${url}. Ex: ${text.slice(
-        0,
-        80
-      )}...`
-    );
-  }
-
-  if (!res.ok) {
-    const text = await res.text().catch(() => "");
-    throw new Error(`HTTP ${res.status} em ${url}. ${text}`);
-  }
-
-  return (await res.json()) as T;
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return res.json();
 }
 
 async function getAgentPrompt(): Promise<string> {
   try {
-    const data = await fetchJson<SettingResponse>("/api/settings?key=agent_prompt");
-    return (data?.value || "").toString();
+    const data = await fetchJson<{ value: string }>("/api/settings?key=agent_prompt");
+    return data?.value || "";
   } catch {
-    // se setting não existir ainda, retorna vazio (não quebra)
     return "";
   }
 }
@@ -103,10 +202,13 @@ async function saveAgentPrompt(value: string): Promise<void> {
   });
 }
 
-async function getKnowledge(category?: string): Promise<KnowledgeItem[]> {
-  const qs = category ? `?category=${encodeURIComponent(category)}` : "";
-  const data = await fetchJson<KnowledgeItem[]>(`/api/knowledge${qs}`);
-  return Array.isArray(data) ? data : [];
+async function getKnowledge(): Promise<KnowledgeItem[]> {
+  try {
+    const data = await fetchJson<KnowledgeItem[]>("/api/knowledge");
+    return Array.isArray(data) ? data : [];
+  } catch {
+    return [];
+  }
 }
 
 async function saveKnowledge(item: KnowledgeItem): Promise<void> {
@@ -125,331 +227,259 @@ async function deleteKnowledge(id: string): Promise<void> {
   });
 }
 
-// -----------------------------------------------------
-// UI Helpers
-// -----------------------------------------------------
-function cn(...classes: Array<string | false | null | undefined>) {
-  return classes.filter(Boolean).join(" ");
-}
+// ============ MAIN COMPONENT ============
 
-function useToast() {
-  const [toast, setToast] = useState<{
-    type: "success" | "error" | "info";
-    title: string;
-    desc?: string;
-  } | null>(null);
-
-  const timer = useRef<number | null>(null);
-
-  function show(t: { type: "success" | "error" | "info"; title: string; desc?: string }) {
-    setToast(t);
-    if (timer.current) window.clearTimeout(timer.current);
-    timer.current = window.setTimeout(() => setToast(null), 3200);
-  }
-
-  return { toast, show, clear: () => setToast(null) };
-}
-
-/**
- * Fallback GlassCard (caso seu projeto não tenha)
- * Se você já tem GlassCard no projeto, pode remover isso e importar.
- */
-function GlassCard(props: {
-  title: string;
-  subtitle?: string;
-  right?: React.ReactNode;
-  children: React.ReactNode;
-  className?: string;
-}) {
-  const { title, subtitle, right, children, className } = props;
-  return (
-    <div
-      className={cn(
-        "rounded-[28px] border border-white/10 bg-white/[0.03] backdrop-blur-xl shadow-[0_0_0_1px_rgba(255,255,255,0.05)]",
-        className
-      )}
-    >
-      <div className="p-6">
-        <div className="flex items-start justify-between gap-4">
-          <div>
-            <p className="text-white font-semibold text-lg">{title}</p>
-            {subtitle && <p className="text-gray-500 text-sm mt-1">{subtitle}</p>}
-          </div>
-          {right}
-        </div>
-
-        <div className="mt-5">{children}</div>
-      </div>
-    </div>
-  );
-}
-
-// -----------------------------------------------------
-// Main Page
-// -----------------------------------------------------
 export default function TrainingPage() {
-  const { toast, show, clear } = useToast();
+  const [tab, setTab] = useState<"prompt" | "knowledge" | "social" | "playground">("prompt");
+  const [toast, setToast] = useState<{ type: "success" | "error"; text: string } | null>(null);
 
-  // Prompt
+  // Prompt state
+  const [prompt, setPrompt] = useState("");
+  const [promptOriginal, setPromptOriginal] = useState("");
   const [promptLoading, setPromptLoading] = useState(true);
   const [promptSaving, setPromptSaving] = useState(false);
-  const [promptValue, setPromptValue] = useState("");
-  const [promptOriginal, setPromptOriginal] = useState("");
+  const [templateModal, setTemplateModal] = useState(false);
 
-  // Knowledge
-  const [kbLoading, setKbLoading] = useState(true);
-  const [kbSaving, setKbSaving] = useState(false);
-  const [kbDeleting, setKbDeleting] = useState<string | null>(null);
+  // Knowledge state
   const [kb, setKb] = useState<KnowledgeItem[]>([]);
+  const [kbLoading, setKbLoading] = useState(true);
   const [kbSearch, setKbSearch] = useState("");
-  const [kbCategory, setKbCategory] = useState<string>("all");
-  const [kbCategoryOpen, setKbCategoryOpen] = useState(false);
-
-  // Modal create/edit KB
-  const [kbModalOpen, setKbModalOpen] = useState(false);
+  const [kbCategory, setKbCategory] = useState("all");
+  const [kbModal, setKbModal] = useState(false);
   const [kbEditing, setKbEditing] = useState<KnowledgeItem | null>(null);
+  const [kbSaving, setKbSaving] = useState(false);
+  const [importModal, setImportModal] = useState(false);
 
-  // Playground
-  const [playContext, setPlayContext] = useState<PlaygroundContext>({
-    stage: "curioso",
-    emotion: "neutral",
-    channel: "whatsapp",
-  });
+  // Social Proof state
+  const [socialProofs, setSocialProofs] = useState<SocialProof[]>([
+    {
+      id: "sp-1",
+      type: "depoimento",
+      title: "Atendimento 24/7",
+      content: "Depois que implementamos a DOCA, nosso atendimento nunca mais parou. Os clientes adoram a rapidez!",
+      author: "Maria Silva",
+      company: "Clínica Estética",
+      image: "https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=150&h=150&fit=crop&crop=face",
+      active: true,
+      created_at: new Date().toISOString(),
+    },
+    {
+      id: "sp-2",
+      type: "case",
+      title: "Aumento de 40% em conversões",
+      content: "Restaurante que triplicou pedidos pelo WhatsApp usando IA para atendimento automático.",
+      result: "+40% conversão em 30 dias",
+      company: "Pizzaria Napolitana",
+      image: "https://images.unsplash.com/photo-1565299624946-b28f40a0ae38?w=300&h=200&fit=crop",
+      active: true,
+      created_at: new Date().toISOString(),
+    },
+    {
+      id: "sp-3",
+      type: "metrica",
+      title: "Tempo de resposta",
+      content: "Média de 8 segundos para primeira resposta, contra 15 minutos do atendimento manual.",
+      result: "8s vs 15min",
+      image: "https://images.unsplash.com/photo-1551288049-bebda4e38f71?w=300&h=200&fit=crop",
+      active: true,
+      created_at: new Date().toISOString(),
+    },
+  ]);
+  const [socialModal, setSocialModal] = useState(false);
+  const [socialEditing, setSocialEditing] = useState<SocialProof | null>(null);
+  const [socialSaving, setSocialSaving] = useState(false);
+  const [socialFilter, setSocialFilter] = useState<"all" | "depoimento" | "case" | "metrica">("all");
+
+  // Playground state
   const [playInput, setPlayInput] = useState("");
-  const [playOutput, setPlayOutput] = useState<{
-    answer: string;
-    sources: Array<{ question: string; category?: string | null }>;
-    confidence: number;
-    escalate: boolean;
-    rationale: string;
-  } | null>(null);
+  const [playOutput, setPlayOutput] = useState("");
   const [playLoading, setPlayLoading] = useState(false);
+  const [playHistory, setPlayHistory] = useState<{ role: "user" | "ai"; text: string }[]>([]);
 
-  // Tabs dentro do treinamento (para adicionar Prova Social)
-  const [tab, setTab] = useState<"prompt" | "knowledge" | "social" | "playground">("prompt");
+  const showToast = (type: "success" | "error", text: string) => {
+    setToast({ type, text });
+    setTimeout(() => setToast(null), 3000);
+  };
 
-  const categories = useMemo(() => {
-    const all = new Set<string>();
-    kb.forEach((x) => {
-      const c = (x.category || "").trim();
-      if (c) all.add(c);
-    });
-    return ["all", ...Array.from(all).sort((a, b) => a.localeCompare(b))];
-  }, [kb]);
+  // ============ LOAD DATA ============
 
-  const filteredKb = useMemo(() => {
-    const q = kbSearch.trim().toLowerCase();
-    return kb.filter((item) => {
-      const catOK = kbCategory === "all" ? true : (item.category || "") === kbCategory;
-      if (!catOK) return false;
-
-      if (!q) return true;
-
-      const hay = `${item.question}\n${item.answer}\n${(item.tags || []).join(" ")}\n${item.category || ""}`.toLowerCase();
-      return hay.includes(q);
-    });
-  }, [kb, kbSearch, kbCategory]);
-
-  const promptDirty = useMemo(() => promptValue !== promptOriginal, [promptValue, promptOriginal]);
-
-  // -----------------------------------------------------
-  // Load data
-  // -----------------------------------------------------
   useEffect(() => {
-    loadAll();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    loadPrompt();
+    loadKb();
   }, []);
 
-  async function loadAll() {
-    await Promise.all([loadPrompt(), loadKb()]);
-  }
-
   async function loadPrompt() {
-    try {
-      setPromptLoading(true);
-      const p = await getAgentPrompt();
-      setPromptValue(p);
-      setPromptOriginal(p);
-    } catch (e: any) {
-      show({ type: "error", title: "Erro ao carregar prompt", desc: e?.message });
-    } finally {
-      setPromptLoading(false);
-    }
+    setPromptLoading(true);
+    const p = await getAgentPrompt();
+    setPrompt(p);
+    setPromptOriginal(p);
+    setPromptLoading(false);
   }
 
   async function loadKb() {
-    try {
-      setKbLoading(true);
-      const data = await getKnowledge();
-      setKb(data);
-    } catch (e: any) {
-      show({ type: "error", title: "Erro ao carregar base", desc: e?.message });
-    } finally {
-      setKbLoading(false);
-    }
+    setKbLoading(true);
+    const data = await getKnowledge();
+    setKb(data);
+    setKbLoading(false);
   }
 
-  // -----------------------------------------------------
-  // Prompt Actions
-  // -----------------------------------------------------
-  async function onSavePrompt() {
-    const value = promptValue.trim();
-    if (!value) {
-      show({ type: "error", title: "Prompt vazio", desc: "Escreva um prompt antes de salvar." });
+  // ============ PROMPT ACTIONS ============
+
+  async function handleSavePrompt() {
+    if (!prompt.trim()) {
+      showToast("error", "Prompt vazio");
       return;
     }
-
+    setPromptSaving(true);
     try {
-      setPromptSaving(true);
-      await saveAgentPrompt(value);
-      setPromptOriginal(value);
-      show({ type: "success", title: "Prompt salvo", desc: "Configuração aplicada no backend." });
-    } catch (e: any) {
-      show({ type: "error", title: "Falha ao salvar prompt", desc: e?.message });
-    } finally {
-      setPromptSaving(false);
+      await saveAgentPrompt(prompt);
+      setPromptOriginal(prompt);
+      showToast("success", "Prompt salvo!");
+    } catch {
+      showToast("error", "Erro ao salvar");
     }
+    setPromptSaving(false);
   }
 
-  function onResetPrompt() {
-    setPromptValue(promptOriginal);
-    show({ type: "info", title: "Prompt restaurado", desc: "Voltando para a última versão salva." });
+  function handleUseTemplate(t: PromptTemplate) {
+    setPrompt(t.prompt);
+    setTemplateModal(false);
+    showToast("success", `Template "${t.name}" aplicado`);
   }
 
-  // -----------------------------------------------------
-  // KB Actions
-  // -----------------------------------------------------
-  function openCreateKb() {
-    setKbEditing(null);
-    setKbModalOpen(true);
-  }
+  // ============ KB ACTIONS ============
 
-  function openEditKb(item: KnowledgeItem) {
-    setKbEditing(item);
-    setKbModalOpen(true);
-  }
+  const categories = useMemo(() => {
+    const cats = new Set<string>();
+    kb.forEach(k => k.category && cats.add(k.category));
+    return ["all", ...Array.from(cats).sort()];
+  }, [kb]);
 
-  async function onDeleteKb(item: KnowledgeItem) {
-    if (!item.id) return;
+  const filteredKb = useMemo(() => {
+    const q = kbSearch.toLowerCase();
+    return kb.filter(k => {
+      if (kbCategory !== "all" && k.category !== kbCategory) return false;
+      if (!q) return true;
+      return `${k.question} ${k.answer} ${(k.tags || []).join(" ")}`.toLowerCase().includes(q);
+    });
+  }, [kb, kbSearch, kbCategory]);
 
-    const ok = window.confirm("Remover este item da base de conhecimento?");
-    if (!ok) return;
+  const kbStats = useMemo(() => ({
+    total: kb.length,
+    categories: new Set(kb.map(k => k.category).filter(Boolean)).size,
+    avgPriority: kb.length > 0 ? (kb.reduce((a, k) => a + (k.priority || 3), 0) / kb.length).toFixed(1) : "0",
+  }), [kb]);
 
-    try {
-      setKbDeleting(item.id);
-      await deleteKnowledge(item.id);
-      show({ type: "success", title: "Removido", desc: "Item removido da base." });
-      await loadKb();
-    } catch (e: any) {
-      show({ type: "error", title: "Erro ao remover", desc: e?.message });
-    } finally {
-      setKbDeleting(null);
-    }
-  }
-
-  async function onSaveKbModal(item: KnowledgeItem) {
-    // validações
-    if (!item.question?.trim()) {
-      show({ type: "error", title: "Pergunta obrigatória" });
+  async function handleSaveKb(item: KnowledgeItem) {
+    if (!item.question?.trim() || !item.answer?.trim()) {
+      showToast("error", "Pergunta e resposta obrigatórias");
       return;
     }
-    if (!item.answer?.trim()) {
-      show({ type: "error", title: "Resposta obrigatória" });
-      return;
-    }
-
+    setKbSaving(true);
     try {
-      setKbSaving(true);
-      await saveKnowledge({
-        ...item,
-        category: (item.category || "").trim() || null,
-        priority: typeof item.priority === "number" ? item.priority : 3,
-        tags: Array.isArray(item.tags) ? item.tags : [],
-      });
-
-      show({ type: "success", title: item.id ? "Atualizado" : "Adicionado", desc: "Base de conhecimento salva." });
-      setKbModalOpen(false);
+      await saveKnowledge(item);
+      showToast("success", item.id ? "Atualizado!" : "Adicionado!");
+      setKbModal(false);
       setKbEditing(null);
       await loadKb();
-    } catch (e: any) {
-      show({ type: "error", title: "Erro ao salvar", desc: e?.message });
-    } finally {
-      setKbSaving(false);
+    } catch {
+      showToast("error", "Erro ao salvar");
     }
+    setKbSaving(false);
   }
 
-  // -----------------------------------------------------
-  // Playground (mockado, mas premium)
-  // -----------------------------------------------------
-  async function onRunPlayground() {
-    const input = playInput.trim();
-    if (!input) {
-      show({ type: "error", title: "Digite uma mensagem", desc: "Simule uma pergunta do lead para testar." });
-      return;
-    }
-
+  async function handleDeleteKb(id: string) {
+    if (!confirm("Remover este item?")) return;
     try {
-      setPlayLoading(true);
-      setPlayOutput(null);
-
-      // Simula "IA" usando KB local: pega top 2 FAQs mais relevantes (match simples)
-      const q = input.toLowerCase();
-      const scored = kb
-        .map((k) => {
-          const hay = `${k.question}\n${k.answer}\n${(k.tags || []).join(" ")}\n${k.category || ""}`.toLowerCase();
-          let score = 0;
-          q.split(/\s+/).forEach((w) => {
-            if (w.length >= 3 && hay.includes(w)) score += 1;
-          });
-          // boost por prioridade
-          score += ((k.priority || 3) - 1) * 0.25;
-          return { k, score };
-        })
-        .sort((a, b) => b.score - a.score);
-
-      const sources = scored
-        .filter((x) => x.score > 0)
-        .slice(0, 2)
-        .map((x) => ({
-          question: x.k.question,
-          category: x.k.category || null,
-        }));
-
-      // resposta “premium fake” (até plugar no backend)
-      const escalate = playContext.emotion === "frustrated" || playContext.stage === "frustrado";
-      const confidence = clamp01(
-        0.62 +
-          (sources.length > 0 ? 0.18 : -0.08) +
-          (playContext.emotion === "ready" ? 0.12 : 0) +
-          (playContext.emotion === "skeptical" ? -0.08 : 0)
-      );
-
-      const answer = buildMockAnswer({
-        input,
-        ctx: playContext,
-        sources,
-      });
-
-      setPlayOutput({
-        answer,
-        sources,
-        confidence: Math.round(confidence * 100),
-        escalate,
-        rationale:
-          sources.length > 0
-            ? "A resposta foi composta usando os itens mais relevantes da Base de Conhecimento."
-            : "Sem match forte na Base de Conhecimento; resposta gerada com heurística padrão.",
-      });
-    } catch (e: any) {
-      show({ type: "error", title: "Falha no teste", desc: e?.message });
-    } finally {
-      setPlayLoading(false);
+      await deleteKnowledge(id);
+      showToast("success", "Removido!");
+      await loadKb();
+    } catch {
+      showToast("error", "Erro ao remover");
     }
   }
 
-  // -----------------------------------------------------
-  // Render
-  // -----------------------------------------------------
+  // ============ IMPORT/EXPORT ============
+
+  function handleExportKb() {
+    const data = kb.map(({ id, question, answer, category, priority, tags }) => ({
+      question, answer, category, priority, tags
+    }));
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `knowledge-base-${new Date().toISOString().split("T")[0]}.json`;
+    a.click();
+    showToast("success", "Exportado!");
+  }
+
+  function handleImportKb(file: File) {
+    const reader = new FileReader();
+    reader.onload = async (e) => {
+      try {
+        const data = JSON.parse(e.target?.result as string);
+        if (!Array.isArray(data)) throw new Error("Formato inválido");
+        
+        let imported = 0;
+        for (const item of data) {
+          if (item.question && item.answer) {
+            await saveKnowledge({
+              question: item.question,
+              answer: item.answer,
+              category: item.category || null,
+              priority: item.priority || 3,
+              tags: item.tags || [],
+            });
+            imported++;
+          }
+        }
+        showToast("success", `${imported} itens importados!`);
+        await loadKb();
+        setImportModal(false);
+      } catch {
+        showToast("error", "Erro ao importar arquivo");
+      }
+    };
+    reader.readAsText(file);
+  }
+
+  // ============ PLAYGROUND ============
+
+  async function handlePlayground() {
+    if (!playInput.trim()) return;
+    
+    setPlayLoading(true);
+    setPlayHistory(prev => [...prev, { role: "user", text: playInput }]);
+    
+    // Simula busca na KB + resposta
+    await new Promise(r => setTimeout(r, 800));
+    
+    const q = playInput.toLowerCase();
+    const matches = kb.filter(k => 
+      k.question.toLowerCase().includes(q) || 
+      k.answer.toLowerCase().includes(q) ||
+      (k.tags || []).some(t => t.toLowerCase().includes(q))
+    ).slice(0, 2);
+    
+    let response = "";
+    if (matches.length > 0) {
+      response = `Baseado na base de conhecimento:\n\n${matches[0].answer}`;
+      if (matches.length > 1) {
+        response += `\n\nTambém relacionado: ${matches[1].question}`;
+      }
+    } else {
+      response = "Não encontrei uma resposta específica na base de conhecimento. Considere adicionar esse tópico ao KB ou escalar para humano.";
+    }
+    
+    setPlayHistory(prev => [...prev, { role: "ai", text: response }]);
+    setPlayOutput(response);
+    setPlayInput("");
+    setPlayLoading(false);
+  }
+
+  // ============ RENDER ============
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -459,819 +489,941 @@ export default function TrainingPage() {
             <Brain className="w-6 h-6 text-[#f57f17]" />
             Treinamento
           </h2>
-          <p className="text-gray-500 text-sm">
-            Configure o comportamento do agente e melhore as respostas com uma base de conhecimento viva.
+          <p className="text-gray-500 text-sm mt-1">
+            Configure o comportamento e conhecimento do agente
           </p>
         </div>
 
-        <div className="flex items-center gap-2 rounded-2xl border border-white/10 bg-white/5 px-4 py-2">
-          <div className="h-8 w-8 rounded-2xl bg-[#f57f17]/15 border border-[#f57f17]/25 flex items-center justify-center">
-            <BookOpen className="w-4 h-4 text-[#f57f17]" />
-          </div>
-          <div className="leading-tight">
-            <p className="text-sm text-white font-semibold">Modo Treinamento</p>
-            <p className="text-xs text-gray-500">Prompt + Knowledge + Prova Social + Testes</p>
-          </div>
+        {/* Tabs */}
+        <div className="flex flex-wrap gap-2">
+          {[
+            { key: "prompt", label: "Prompt", icon: FileText },
+            { key: "knowledge", label: "Base de Conhecimento", icon: BookOpen },
+            { key: "social", label: "Prova Social", icon: Star },
+            { key: "playground", label: "Playground", icon: TestTube2 },
+          ].map(t => (
+            <button
+              key={t.key}
+              onClick={() => setTab(t.key as any)}
+              className={`h-10 px-4 rounded-xl flex items-center gap-2 text-sm font-medium transition ${
+                tab === t.key
+                  ? "bg-[#f57f17]/20 border border-[#f57f17]/30 text-white"
+                  : "bg-white/5 border border-white/10 text-gray-400 hover:text-white"
+              }`}
+            >
+              <t.icon className="w-4 h-4" />
+              {t.label}
+            </button>
+          ))}
         </div>
       </div>
 
-      {/* Tabs */}
-      <div className="flex items-center gap-2 flex-wrap">
-        <TabButton
-          active={tab === "prompt"}
-          onClick={() => setTab("prompt")}
-          icon={<Brain className="w-4 h-4" />}
-          label="Prompt"
-        />
-        <TabButton
-          active={tab === "knowledge"}
-          onClick={() => setTab("knowledge")}
-          icon={<BookOpen className="w-4 h-4" />}
-          label="Knowledge Base"
-        />
-        <TabButton
-          active={tab === "social"}
-          onClick={() => setTab("social")}
-          icon={<ImageIcon className="w-4 h-4" />}
-          label="Prova Social"
-        />
-        <TabButton
-          active={tab === "playground"}
-          onClick={() => setTab("playground")}
-          icon={<TestTube2 className="w-4 h-4" />}
-          label="Playground"
-        />
-      </div>
-
-      {/* Toast */}
-      {toast && (
-        <div className="fixed right-6 top-6 z-50">
-          <div
-            className={cn(
-              "rounded-2xl border backdrop-blur-xl px-4 py-3 shadow-xl w-[360px]",
-              toast.type === "success" && "border-emerald-500/25 bg-emerald-500/10",
-              toast.type === "error" && "border-red-500/25 bg-red-500/10",
-              toast.type === "info" && "border-white/10 bg-white/5"
-            )}
-          >
-            <div className="flex items-start gap-3">
-              <div className="mt-0.5">
-                {toast.type === "success" ? (
-                  <CheckCircle2 className="w-5 h-5 text-emerald-300" />
-                ) : toast.type === "error" ? (
-                  <XCircle className="w-5 h-5 text-red-300" />
-                ) : (
-                  <Info className="w-5 h-5 text-gray-300" />
-                )}
-              </div>
-
-              <div className="flex-1">
-                <p className="text-white font-semibold text-sm">{toast.title}</p>
-                {toast.desc && <p className="text-gray-300 text-sm mt-1">{toast.desc}</p>}
-              </div>
-
-              <button onClick={clear} className="text-gray-400 hover:text-gray-200">
-                ✕
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ------------------ TAB: PROMPT ------------------ */}
+      {/* PROMPT TAB */}
       {tab === "prompt" && (
-        <GlassCard
-          title="Prompt do Agente"
-          subtitle="Defina as regras, tom e objetivo. Essa é a “mente” do agente."
-          right={
-            <div className="flex items-center gap-2">
-              <button
-                onClick={onResetPrompt}
-                disabled={!promptDirty || promptLoading || promptSaving}
-                className={cn(
-                  "h-10 px-4 rounded-2xl border transition-all flex items-center gap-2 text-sm font-semibold",
-                  !promptDirty || promptLoading || promptSaving
-                    ? "border-white/10 bg-white/5 text-gray-500 cursor-not-allowed"
-                    : "border-white/10 bg-white/5 text-gray-200 hover:bg-white/10"
-                )}
-              >
-                <RotateCcw className="w-4 h-4" />
-                Restaurar
-              </button>
-
-              <button
-                onClick={onSavePrompt}
-                disabled={promptLoading || promptSaving || !promptDirty}
-                className={cn(
-                  "h-10 px-4 rounded-2xl border transition-all flex items-center gap-2 text-sm font-semibold",
-                  promptLoading || promptSaving || !promptDirty
-                    ? "border-[#f57f17]/20 bg-[#f57f17]/10 text-[#f57f17]/60 cursor-not-allowed"
-                    : "border-[#f57f17]/35 bg-[#f57f17]/15 text-white hover:bg-[#f57f17]/20 shadow-[0_0_0_1px_rgba(245,127,23,0.12)]"
-                )}
-              >
-                {promptSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
-                Salvar
-              </button>
-            </div>
-          }
-        >
-          {promptLoading ? (
-            <div className="rounded-2xl border border-white/10 bg-black/30 p-4">
-              <div className="flex items-center gap-3 text-gray-400">
-                <Loader2 className="w-4 h-4 animate-spin" />
-                Carregando prompt…
-              </div>
-            </div>
-          ) : (
-            <>
-              <div className="rounded-2xl border border-white/10 bg-black/35 overflow-hidden">
-                <div className="px-4 py-3 border-b border-white/10 flex items-center justify-between">
-                  <div className="flex items-center gap-2 text-sm text-gray-300">
-                    <span className="font-semibold text-white">agent_prompt</span>
-                    <span className="text-gray-600">•</span>
-                    <span className={promptDirty ? "text-[#f57f17]" : "text-gray-500"}>
-                      {promptDirty ? "Não salvo" : "Salvo"}
-                    </span>
-                  </div>
-
-                  <div className="text-xs text-gray-500">
-                    Dica: inclua regras + tom + coleta de dados + fechamento
-                  </div>
-                </div>
-
-                <textarea
-                  value={promptValue}
-                  onChange={(e) => setPromptValue(e.target.value)}
-                  className="w-full min-h-[340px] p-4 bg-transparent outline-none resize-none font-mono text-sm text-gray-200 placeholder:text-gray-600"
-                  placeholder={`Exemplo:
-Você é um atendente especialista.
-- Seja direto e consultivo.
-- Sempre pergunte Nome + Segmento.
-- Nunca prometa garantias irreais.
-- Se lead estiver frustrado, escale para humano.`}
-                />
-              </div>
-
-              <div className="mt-4 grid grid-cols-1 md:grid-cols-3 gap-3">
-                <QuickChip title="Objetivo" desc="Converter leads com clareza" />
-                <QuickChip title="Tom" desc="Premium, consultivo, assertivo" />
-                <QuickChip title="Regras" desc="Compliance + escalonamento" />
-              </div>
-            </>
-          )}
-        </GlassCard>
-      )}
-
-      {/* ------------------ TAB: KNOWLEDGE ------------------ */}
-      {tab === "knowledge" && (
-        <GlassCard
-          title="Base de Conhecimento"
-          subtitle="Perguntas e respostas que a IA usa como referência para atender com consistência."
-          right={
-            <div className="flex items-center gap-2">
-              <div className="relative">
-                <button
-                  onClick={() => setKbCategoryOpen((v) => !v)}
-                  className="h-10 px-4 rounded-2xl border border-white/10 bg-white/5 hover:bg-white/10 transition-all flex items-center gap-2 text-sm font-semibold text-gray-200"
-                >
-                  <Filter className="w-4 h-4 text-gray-400" />
-                  {kbCategory === "all" ? "Todas categorias" : kbCategory}
-                  <ChevronDown className="w-4 h-4 text-gray-400" />
-                </button>
-
-                {kbCategoryOpen && (
-                  <div className="absolute right-0 mt-2 w-64 rounded-2xl border border-white/10 bg-black/85 backdrop-blur-xl shadow-xl overflow-hidden z-10">
-                    {categories.map((c) => (
-                      <button
-                        key={c}
-                        onClick={() => {
-                          setKbCategory(c);
-                          setKbCategoryOpen(false);
-                        }}
-                        className={cn(
-                          "w-full text-left px-4 py-3 text-sm hover:bg-white/5",
-                          kbCategory === c ? "text-white font-semibold" : "text-gray-200"
-                        )}
-                      >
-                        {c === "all" ? "Todas categorias" : c}
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
-
-              <button
-                onClick={openCreateKb}
-                className="h-10 px-4 rounded-2xl border border-[#f57f17]/35 bg-[#f57f17]/15 text-white hover:bg-[#f57f17]/20 transition-all flex items-center gap-2 text-sm font-semibold shadow-[0_0_0_1px_rgba(245,127,23,0.12)]"
-              >
-                <Plus className="w-4 h-4" />
-                Adicionar
-              </button>
-            </div>
-          }
-        >
-          {/* Search */}
-          <div className="flex items-center gap-3">
-            <div className="flex-1 relative">
-              <Search className="w-4 h-4 text-gray-500 absolute left-3 top-1/2 -translate-y-1/2" />
-              <input
-                value={kbSearch}
-                onChange={(e) => setKbSearch(e.target.value)}
-                placeholder="Buscar por pergunta, resposta, tags..."
-                className="w-full h-10 rounded-2xl bg-white/5 border border-white/10 pl-10 pr-3 text-sm text-gray-200 placeholder:text-gray-500 outline-none focus:ring-2 focus:ring-[#f57f17] focus:border-transparent"
-              />
-            </div>
-
-            <div className="hidden md:flex items-center gap-2 text-xs text-gray-500">
-              <Tag className="w-4 h-4 text-gray-600" />
-              {kb.length} itens
-            </div>
+        <div className="space-y-6">
+          {/* Stats */}
+          <div className="grid grid-cols-3 gap-4">
+            <StatCard icon={FileText} label="Caracteres" value={prompt.length.toLocaleString()} />
+            <StatCard icon={Target} label="Linhas" value={prompt.split("\n").length} />
+            <StatCard icon={Clock} label="Status" value={prompt === promptOriginal ? "Salvo" : "Alterado"} 
+              color={prompt === promptOriginal ? "text-emerald-400" : "text-yellow-400"} />
           </div>
 
-          {/* List */}
-          <div className="mt-4 space-y-3">
-            {kbLoading ? (
-              <div className="rounded-2xl border border-white/10 bg-black/30 p-4">
-                <div className="flex items-center gap-3 text-gray-400">
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                  Carregando base…
-                </div>
+          {/* Editor */}
+          <div className="rounded-[28px] border border-white/10 bg-white/5 p-6">
+            <div className="flex items-center justify-between mb-4">
+              <div>
+                <h3 className="text-white font-bold">System Prompt</h3>
+                <p className="text-gray-500 text-sm">Define personalidade, regras e tom de voz do agente</p>
               </div>
-            ) : filteredKb.length === 0 ? (
-              <div className="rounded-2xl border border-dashed border-white/15 bg-black/25 p-6 text-center">
-                <p className="text-white font-semibold">Nenhum item encontrado</p>
-                <p className="text-gray-500 text-sm mt-1">
-                  Ajuste filtros ou adicione perguntas e respostas para enriquecer a IA.
-                </p>
-                <button
-                  onClick={openCreateKb}
-                  className="mt-4 inline-flex items-center gap-2 h-10 px-4 rounded-2xl border border-[#f57f17]/35 bg-[#f57f17]/15 text-white hover:bg-[#f57f17]/20 transition-all text-sm font-semibold"
-                >
-                  <Plus className="w-4 h-4" /> Adicionar item
-                </button>
+              <button
+                onClick={() => setTemplateModal(true)}
+                className="h-9 px-4 rounded-xl bg-white/5 border border-white/10 text-sm text-gray-300 hover:bg-white/10 flex items-center gap-2"
+              >
+                <Sparkles className="w-4 h-4" />
+                Templates
+              </button>
+            </div>
+
+            {promptLoading ? (
+              <div className="h-64 flex items-center justify-center">
+                <Loader2 className="w-6 h-6 text-gray-500 animate-spin" />
               </div>
             ) : (
-              filteredKb.map((item) => (
-                <KnowledgeRow
-                  key={item.id || item.question}
-                  item={item}
-                  onEdit={() => openEditKb(item)}
-                  onDelete={() => onDeleteKb(item)}
-                  deleting={kbDeleting === item.id}
-                />
-              ))
-            )}
-          </div>
-
-          <div className="mt-5 rounded-2xl border border-white/10 bg-black/25 p-4">
-            <p className="text-white font-semibold text-sm">Boas práticas</p>
-            <ul className="mt-2 space-y-1 text-sm text-gray-500">
-              <li>• Respostas devem ser objetivas, com exemplos e termos do seu negócio.</li>
-              <li>• Use categorias: Preço, Integrações, ROI, Objeções, Garantia, Suporte…</li>
-              <li>• Prioridade (1–5) define o que a IA puxa primeiro.</li>
-            </ul>
-          </div>
-        </GlassCard>
-      )}
-
-      {/* ------------------ TAB: PROVA SOCIAL ------------------ */}
-      {tab === "social" && (
-        <div className="space-y-4">
-          <div className="rounded-2xl border border-white/10 bg-white/[0.03] backdrop-blur-xl px-5 py-4">
-            <p className="text-white font-semibold">Prova Social (Conviction Engine)</p>
-            <p className="text-gray-500 text-sm mt-1">
-              Aqui você salva prints, cases e resultados para o agente usar na hora certa (principalmente para CÉTICOS).
-            </p>
-          </div>
-
-          {/* ✅ componente novo */}
-          <SocialProofLibrary />
-        </div>
-      )}
-
-      {/* ------------------ TAB: PLAYGROUND ------------------ */}
-      {tab === "playground" && (
-        <GlassCard
-          title="Playground"
-          subtitle="Teste o comportamento do agente com contexto (estágio, emoção e canal)."
-          right={
-            <button
-              onClick={onRunPlayground}
-              disabled={playLoading}
-              className={cn(
-                "h-10 px-4 rounded-2xl border transition-all flex items-center gap-2 text-sm font-semibold",
-                playLoading
-                  ? "border-[#f57f17]/20 bg-[#f57f17]/10 text-[#f57f17]/60 cursor-not-allowed"
-                  : "border-[#f57f17]/35 bg-[#f57f17]/15 text-white hover:bg-[#f57f17]/20 shadow-[0_0_0_1px_rgba(245,127,23,0.12)]"
-              )}
-            >
-              {playLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <TestTube2 className="w-4 h-4" />}
-              Testar
-            </button>
-          }
-        >
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-            {/* Context */}
-            <div className="rounded-2xl border border-white/10 bg-black/30 p-4">
-              <p className="text-white font-semibold">Contexto</p>
-              <p className="text-gray-500 text-sm mt-1">A IA muda resposta conforme o cenário.</p>
-
-              <div className="mt-4 space-y-3">
-                <FieldSelect
-                  label="Estágio"
-                  value={playContext.stage}
-                  onChange={(v) => setPlayContext((s) => ({ ...s, stage: v }))}
-                  options={[
-                    { value: "cético", label: "Cético" },
-                    { value: "frustrado", label: "Frustrado" },
-                    { value: "curioso", label: "Curioso" },
-                    { value: "sensível_preço", label: "Sensível a Preço" },
-                    { value: "empolgado", label: "Empolgado" },
-                    { value: "pronto", label: "Pronto" },
-                  ]}
-                />
-
-                <FieldSelect
-                  label="Emoção"
-                  value={playContext.emotion}
-                  onChange={(v) => setPlayContext((s) => ({ ...s, emotion: v }))}
-                  options={[
-                    { value: "neutral", label: "Neutral" },
-                    { value: "curious", label: "Curious" },
-                    { value: "price_sensitive", label: "Price Sensitive" },
-                    { value: "skeptical", label: "Skeptical" },
-                    { value: "frustrated", label: "Frustrated" },
-                    { value: "excited", label: "Excited" },
-                    { value: "ready", label: "Ready" },
-                  ]}
-                />
-
-                <FieldSelect
-                  label="Canal"
-                  value={playContext.channel}
-                  onChange={(v) => setPlayContext((s) => ({ ...s, channel: v }))}
-                  options={[
-                    { value: "whatsapp", label: "WhatsApp" },
-                    { value: "instagram", label: "Instagram (em breve)" },
-                    { value: "web", label: "Webchat (em breve)" },
-                  ]}
-                />
-              </div>
-            </div>
-
-            {/* Input */}
-            <div className="lg:col-span-2 rounded-2xl border border-white/10 bg-black/30 p-4">
-              <div className="flex items-center justify-between gap-3">
-                <div>
-                  <p className="text-white font-semibold">Mensagem do lead</p>
-                  <p className="text-gray-500 text-sm mt-1">
-                    Simule uma pergunta real. O sistema busca referências na Knowledge Base.
-                  </p>
-                </div>
-
-                <div className="text-xs text-gray-500">{kb.length} itens na base</div>
-              </div>
-
-              <div className="mt-4">
-                <textarea
-                  value={playInput}
-                  onChange={(e) => setPlayInput(e.target.value)}
-                  placeholder="Ex: Quanto custa? Tem integração com CRM? Dá pra parcelar? Qual ROI?"
-                  className="w-full min-h-[130px] p-4 rounded-2xl border border-white/10 bg-black/40 outline-none resize-none text-sm text-gray-200 placeholder:text-gray-600 focus:ring-2 focus:ring-[#f57f17]"
-                />
-              </div>
-
-              {/* Output */}
-              <div className="mt-4 rounded-2xl border border-white/10 bg-black/35 p-4">
-                <div className="flex items-start justify-between gap-4">
-                  <div>
-                    <p className="text-white font-semibold">Resposta do agente</p>
-                    <p className="text-gray-500 text-sm mt-1">
-                      Resultado do Playground (simulado). Depois plugamos no backend de IA.
-                    </p>
-                  </div>
-
-                  {playOutput && (
-                    <div className="text-right">
-                      <p className="text-xs text-gray-500">Confiança</p>
-                      <p className="text-white font-bold text-lg">{playOutput.confidence}%</p>
-                    </div>
-                  )}
-                </div>
-
-                <div className="mt-4">
-                  {playLoading ? (
-                    <div className="flex items-center gap-3 text-gray-400">
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                      Gerando resposta…
-                    </div>
-                  ) : playOutput ? (
-                    <>
-                      <div className="rounded-2xl border border-white/10 bg-black/35 p-4">
-                        <p className="text-gray-200 text-sm whitespace-pre-wrap leading-relaxed">
-                          {playOutput.answer}
-                        </p>
-                      </div>
-
-                      <div className="mt-4 grid grid-cols-1 md:grid-cols-3 gap-3">
-                        <MiniStat
-                          label="Escalonar"
-                          value={playOutput.escalate ? "Sim" : "Não"}
-                          tone={playOutput.escalate ? "red" : "green"}
-                        />
-                        <MiniStat label="Contexto" value={`${playContext.stage} • ${playContext.emotion}`} />
-                        <MiniStat label="Canal" value={playContext.channel} />
-                      </div>
-
-                      <div className="mt-4 rounded-2xl border border-white/10 bg-black/25 p-4">
-                        <p className="text-white font-semibold text-sm">Fontes (Knowledge Base)</p>
-                        {playOutput.sources.length === 0 ? (
-                          <p className="text-gray-500 text-sm mt-1">
-                            Nenhum item da base foi “match forte”. Adicione FAQs para aumentar consistência.
-                          </p>
-                        ) : (
-                          <div className="mt-2 space-y-2">
-                            {playOutput.sources.map((s, idx) => (
-                              <div
-                                key={idx}
-                                className="rounded-2xl border border-white/10 bg-black/30 px-3 py-2"
-                              >
-                                <p className="text-gray-200 text-sm font-semibold">{s.question}</p>
-                                {s.category && <p className="text-gray-500 text-xs mt-0.5">{s.category}</p>}
-                              </div>
-                            ))}
-                          </div>
-                        )}
-
-                        <p className="text-gray-500 text-xs mt-3">{playOutput.rationale}</p>
-                      </div>
-                    </>
-                  ) : (
-                    <div className="rounded-2xl border border-dashed border-white/15 bg-black/25 p-6 text-center">
-                      <p className="text-white font-semibold">Nenhum teste rodou ainda</p>
-                      <p className="text-gray-500 text-sm mt-1">
-                        Escolha contexto, digite uma mensagem e clique em Testar.
-                      </p>
-                    </div>
-                  )}
-                </div>
-              </div>
-            </div>
-          </div>
-        </GlassCard>
-      )}
-
-      {/* KB Modal */}
-      {kbModalOpen && (
-        <KbModal
-          saving={kbSaving}
-          item={kbEditing}
-          onClose={() => {
-            setKbModalOpen(false);
-            setKbEditing(null);
-          }}
-          onSave={onSaveKbModal}
-        />
-      )}
-    </div>
-  );
-}
-
-// -----------------------------------------------------
-// Components
-// -----------------------------------------------------
-function TabButton(props: {
-  active: boolean;
-  icon: React.ReactNode;
-  label: string;
-  onClick: () => void;
-}) {
-  return (
-    <button
-      onClick={props.onClick}
-      className={cn(
-        "h-10 px-4 rounded-2xl border transition-all flex items-center gap-2 text-sm font-semibold whitespace-nowrap",
-        props.active
-          ? "border-[#f57f17]/35 bg-[#f57f17]/10 text-white shadow-[0_0_0_1px_rgba(245,127,23,0.14)]"
-          : "border-white/10 bg-white/5 text-gray-300 hover:bg-white/10"
-      )}
-    >
-      <span className={props.active ? "text-[#f57f17]" : "text-gray-400"}>{props.icon}</span>
-      {props.label}
-    </button>
-  );
-}
-
-function QuickChip(props: { title: string; desc: string }) {
-  return (
-    <div className="rounded-2xl border border-white/10 bg-black/30 px-4 py-3">
-      <p className="text-gray-500 text-xs">{props.title}</p>
-      <p className="text-white font-semibold text-sm mt-1">{props.desc}</p>
-    </div>
-  );
-}
-
-function KnowledgeRow(props: {
-  item: KnowledgeItem;
-  onEdit: () => void;
-  onDelete: () => void;
-  deleting?: boolean;
-}) {
-  const { item, onEdit, onDelete, deleting } = props;
-
-  const priority = typeof item.priority === "number" ? item.priority : 3;
-  const tags = Array.isArray(item.tags) ? item.tags : [];
-
-  return (
-    <div className="rounded-2xl border border-white/10 bg-black/30 hover:bg-black/35 transition-all overflow-hidden">
-      <div className="p-4">
-        <div className="flex items-start justify-between gap-4">
-          <div className="min-w-0">
-            <p className="text-white font-semibold">{item.question}</p>
-            <p className="text-gray-500 text-sm mt-1 line-clamp-2">{item.answer}</p>
-
-            <div className="mt-3 flex flex-wrap items-center gap-2">
-              {item.category && (
-                <span className="inline-flex items-center gap-2 rounded-full px-3 py-1 text-xs font-semibold bg-white/5 border border-white/10 text-gray-200">
-                  <BookOpen className="w-3.5 h-3.5 text-gray-400" />
-                  {item.category}
-                </span>
-              )}
-
-              <span className="inline-flex items-center gap-2 rounded-full px-3 py-1 text-xs font-semibold bg-[#f57f17]/10 border border-[#f57f17]/20 text-[#f57f17]">
-                Prioridade {priority}
-              </span>
-
-              {tags.slice(0, 3).map((t) => (
-                <span
-                  key={t}
-                  className="inline-flex items-center gap-2 rounded-full px-3 py-1 text-xs font-semibold bg-black/30 border border-white/10 text-gray-300"
-                >
-                  <Tag className="w-3.5 h-3.5 text-gray-500" />
-                  {t}
-                </span>
-              ))}
-              {tags.length > 3 && <span className="text-xs text-gray-500">+{tags.length - 3}</span>}
-            </div>
-          </div>
-
-          <div className="flex items-center gap-2">
-            <button
-              onClick={onEdit}
-              className="h-10 px-4 rounded-2xl border border-white/10 bg-white/5 hover:bg-white/10 transition-all text-sm font-semibold text-gray-200"
-            >
-              Editar
-            </button>
-            <button
-              onClick={onDelete}
-              disabled={deleting}
-              className={cn(
-                "h-10 w-10 rounded-2xl border transition-all flex items-center justify-center",
-                deleting
-                  ? "border-red-500/20 bg-red-500/10 text-red-300 cursor-not-allowed"
-                  : "border-white/10 bg-white/5 hover:bg-white/10 text-gray-200"
-              )}
-              title="Remover"
-            >
-              {deleting ? (
-                <Loader2 className="w-4 h-4 animate-spin" />
-              ) : (
-                <Trash2 className="w-4 h-4 text-red-300" />
-              )}
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function FieldSelect(props: {
-  label: string;
-  value: string;
-  onChange: (v: string) => void;
-  options: Array<{ value: string; label: string }>;
-}) {
-  return (
-    <div>
-      <p className="text-xs text-gray-500">{props.label}</p>
-      <select
-        value={props.value}
-        onChange={(e) => props.onChange(e.target.value)}
-        className="mt-1 w-full h-10 rounded-2xl border border-white/10 bg-black/40 text-gray-200 text-sm px-3 outline-none focus:ring-2 focus:ring-[#f57f17]"
-      >
-        {props.options.map((o) => (
-          <option key={o.value} value={o.value} className="bg-black">
-            {o.label}
-          </option>
-        ))}
-      </select>
-    </div>
-  );
-}
-
-function MiniStat(props: { label: string; value: string; tone?: "green" | "red" }) {
-  return (
-    <div className="rounded-2xl border border-white/10 bg-black/25 px-4 py-3">
-      <p className="text-xs text-gray-500">{props.label}</p>
-      <p
-        className={cn(
-          "text-white font-semibold text-sm mt-1",
-          props.tone === "green" && "text-emerald-200",
-          props.tone === "red" && "text-red-200"
-        )}
-      >
-        {props.value}
-      </p>
-    </div>
-  );
-}
-
-function KbModal(props: {
-  item: KnowledgeItem | null;
-  saving: boolean;
-  onClose: () => void;
-  onSave: (item: KnowledgeItem) => void;
-}) {
-  const { item, saving, onClose, onSave } = props;
-
-  const [question, setQuestion] = useState(item?.question || "");
-  const [answer, setAnswer] = useState(item?.answer || "");
-  const [category, setCategory] = useState(item?.category || "");
-  const [priority, setPriority] = useState<number>(typeof item?.priority === "number" ? item!.priority! : 3);
-  const [tags, setTags] = useState((item?.tags || []).join(", "));
-
-  return (
-    <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center px-4">
-      <div className="w-full max-w-2xl rounded-[28px] border border-white/10 bg-black/85 shadow-2xl overflow-hidden">
-        <div className="px-6 py-4 border-b border-white/10 flex items-center justify-between">
-          <div>
-            <p className="text-white font-semibold text-lg">{item?.id ? "Editar item" : "Adicionar item"}</p>
-            <p className="text-gray-500 text-sm mt-1">
-              Mantenha respostas claras e úteis. Isso afeta diretamente a performance.
-            </p>
-          </div>
-
-          <button
-            onClick={onClose}
-            className="h-10 w-10 rounded-2xl border border-white/10 bg-white/5 hover:bg-white/10 transition-all text-gray-200"
-          >
-            ✕
-          </button>
-        </div>
-
-        <div className="p-6 space-y-4">
-          <div>
-            <p className="text-xs text-gray-500">Pergunta</p>
-            <input
-              value={question}
-              onChange={(e) => setQuestion(e.target.value)}
-              className="mt-1 w-full h-10 rounded-2xl border border-white/10 bg-black/40 text-gray-200 text-sm px-3 outline-none focus:ring-2 focus:ring-[#f57f17]"
-              placeholder="Ex: Quanto custa? Vocês integram com CRM?"
-            />
-          </div>
-
-          <div>
-            <p className="text-xs text-gray-500">Resposta</p>
-            <textarea
-              value={answer}
-              onChange={(e) => setAnswer(e.target.value)}
-              className="mt-1 w-full min-h-[140px] rounded-2xl border border-white/10 bg-black/40 text-gray-200 text-sm p-3 outline-none resize-none focus:ring-2 focus:ring-[#f57f17]"
-              placeholder="Ex: Temos plano mensal e anual. Integração via webhook + API..."
-            />
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-            <div>
-              <p className="text-xs text-gray-500">Categoria</p>
-              <input
-                value={category}
-                onChange={(e) => setCategory(e.target.value)}
-                className="mt-1 w-full h-10 rounded-2xl border border-white/10 bg-black/40 text-gray-200 text-sm px-3 outline-none focus:ring-2 focus:ring-[#f57f17]"
-                placeholder="Preço, ROI, Integrações..."
+              <textarea
+                value={prompt}
+                onChange={e => setPrompt(e.target.value)}
+                className="w-full h-80 bg-black/30 border border-white/10 rounded-xl p-4 text-gray-200 text-sm font-mono resize-none outline-none focus:border-[#f57f17]/50"
+                placeholder="Digite o system prompt do agente..."
               />
-            </div>
+            )}
 
-            <div>
-              <p className="text-xs text-gray-500">Prioridade (1–5)</p>
+            <div className="flex items-center justify-between mt-4">
+              <p className="text-xs text-gray-500">
+                {prompt !== promptOriginal && "Alterações não salvas"}
+              </p>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => setPrompt(promptOriginal)}
+                  disabled={prompt === promptOriginal}
+                  className="h-10 px-4 rounded-xl bg-white/5 border border-white/10 text-sm text-gray-300 hover:bg-white/10 disabled:opacity-50 flex items-center gap-2"
+                >
+                  <RotateCcw className="w-4 h-4" />
+                  Restaurar
+                </button>
+                <button
+                  onClick={handleSavePrompt}
+                  disabled={promptSaving || prompt === promptOriginal}
+                  className="h-10 px-4 rounded-xl bg-gradient-to-r from-[#f57f17] to-[#ff9800] text-sm font-semibold text-white disabled:opacity-50 flex items-center gap-2"
+                >
+                  {promptSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+                  Salvar
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* KNOWLEDGE TAB */}
+      {tab === "knowledge" && (
+        <div className="space-y-6">
+          {/* Stats */}
+          <div className="grid grid-cols-3 gap-4">
+            <StatCard icon={BookOpen} label="Total de FAQs" value={kbStats.total} />
+            <StatCard icon={BarChart3} label="Categorias" value={kbStats.categories} />
+            <StatCard icon={Target} label="Prioridade Média" value={kbStats.avgPriority} />
+          </div>
+
+          {/* Actions */}
+          <div className="flex items-center justify-between flex-wrap gap-4">
+            <div className="flex items-center gap-3">
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
+                <input
+                  value={kbSearch}
+                  onChange={e => setKbSearch(e.target.value)}
+                  placeholder="Buscar..."
+                  className="h-10 pl-10 pr-4 w-64 rounded-xl bg-white/5 border border-white/10 text-sm text-gray-200 outline-none"
+                />
+              </div>
               <select
-                value={priority}
-                onChange={(e) => setPriority(parseInt(e.target.value))}
-                className="mt-1 w-full h-10 rounded-2xl border border-white/10 bg-black/40 text-gray-200 text-sm px-3 outline-none focus:ring-2 focus:ring-[#f57f17]"
+                value={kbCategory}
+                onChange={e => setKbCategory(e.target.value)}
+                className="h-10 px-3 rounded-xl bg-white/5 border border-white/10 text-sm text-gray-200 outline-none"
               >
-                {[1, 2, 3, 4, 5].map((x) => (
-                  <option key={x} value={x} className="bg-black">
-                    {x}
+                {categories.map(c => (
+                  <option key={c} value={c} className="bg-black">
+                    {c === "all" ? "Todas categorias" : c}
                   </option>
                 ))}
               </select>
             </div>
 
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setImportModal(true)}
+                className="h-10 px-4 rounded-xl bg-white/5 border border-white/10 text-sm text-gray-300 hover:bg-white/10 flex items-center gap-2"
+              >
+                <Upload className="w-4 h-4" />
+                Importar
+              </button>
+              <button
+                onClick={handleExportKb}
+                className="h-10 px-4 rounded-xl bg-white/5 border border-white/10 text-sm text-gray-300 hover:bg-white/10 flex items-center gap-2"
+              >
+                <Download className="w-4 h-4" />
+                Exportar
+              </button>
+              <button
+                onClick={() => { setKbEditing(null); setKbModal(true); }}
+                className="h-10 px-4 rounded-xl bg-gradient-to-r from-[#f57f17] to-[#ff9800] text-sm font-semibold text-white flex items-center gap-2"
+              >
+                <Plus className="w-4 h-4" />
+                Adicionar
+              </button>
+            </div>
+          </div>
+
+          {/* List */}
+          <div className="rounded-[28px] border border-white/10 bg-white/5 overflow-hidden">
+            {kbLoading ? (
+              <div className="h-64 flex items-center justify-center">
+                <Loader2 className="w-6 h-6 text-gray-500 animate-spin" />
+              </div>
+            ) : filteredKb.length === 0 ? (
+              <div className="h-64 flex flex-col items-center justify-center text-gray-500">
+                <BookOpen className="w-8 h-8 mb-2" />
+                <p>Nenhum item encontrado</p>
+              </div>
+            ) : (
+              <div className="divide-y divide-white/5">
+                {filteredKb.map(item => (
+                  <div key={item.id} className="p-4 hover:bg-white/5 transition">
+                    <div className="flex items-start justify-between gap-4">
+                      <div className="flex-1 min-w-0">
+                        <p className="text-white font-medium">{item.question}</p>
+                        <p className="text-gray-500 text-sm mt-1 line-clamp-2">{item.answer}</p>
+                        <div className="flex items-center gap-2 mt-2">
+                          {item.category && (
+                            <span className="text-xs px-2 py-0.5 rounded-full bg-[#f57f17]/10 text-[#f57f17]">
+                              {item.category}
+                            </span>
+                          )}
+                          {item.priority && (
+                            <span className="text-xs text-gray-500">P{item.priority}</span>
+                          )}
+                          {(item.tags || []).slice(0, 3).map(t => (
+                            <span key={t} className="text-xs text-gray-600">#{t}</span>
+                          ))}
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-1">
+                        <button
+                          onClick={() => { setKbEditing(item); setKbModal(true); }}
+                          className="h-8 w-8 rounded-lg bg-white/5 hover:bg-white/10 flex items-center justify-center"
+                        >
+                          <Edit3 className="w-4 h-4 text-gray-400" />
+                        </button>
+                        <button
+                          onClick={() => item.id && handleDeleteKb(item.id)}
+                          className="h-8 w-8 rounded-lg bg-white/5 hover:bg-red-500/10 flex items-center justify-center"
+                        >
+                          <Trash2 className="w-4 h-4 text-red-400" />
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* SOCIAL PROOF TAB */}
+      {tab === "social" && (
+        <div className="space-y-6">
+          {/* Stats */}
+          <div className="grid grid-cols-4 gap-4">
+            <StatCard icon={Star} label="Total" value={socialProofs.length} />
+            <StatCard icon={Quote} label="Depoimentos" value={socialProofs.filter(s => s.type === "depoimento").length} />
+            <StatCard icon={Award} label="Cases" value={socialProofs.filter(s => s.type === "case").length} />
+            <StatCard icon={TrendingUp} label="Métricas" value={socialProofs.filter(s => s.type === "metrica").length} />
+          </div>
+
+          {/* Info */}
+          <div className="rounded-[28px] border border-[#f57f17]/20 bg-[#f57f17]/5 p-5">
+            <div className="flex items-start gap-3">
+              <Sparkles className="w-5 h-5 text-[#f57f17] mt-0.5" />
+              <div>
+                <h4 className="text-white font-semibold">Como funciona a Prova Social</h4>
+                <p className="text-sm text-gray-400 mt-1">
+                  O agente usa essas informações para gerar confiança durante a conversa. 
+                  Depoimentos, cases e métricas são inseridos automaticamente quando relevante.
+                </p>
+              </div>
+            </div>
+          </div>
+
+          {/* Toolbar */}
+          <div className="flex items-center justify-between gap-4 flex-wrap">
+            <div className="flex items-center gap-2">
+              {(["all", "depoimento", "case", "metrica"] as const).map(f => (
+                <button
+                  key={f}
+                  onClick={() => setSocialFilter(f)}
+                  className={`h-9 px-3 rounded-lg text-sm font-medium transition ${
+                    socialFilter === f
+                      ? "bg-[#f57f17]/20 text-white"
+                      : "bg-white/5 text-gray-400 hover:text-white"
+                  }`}
+                >
+                  {f === "all" ? "Todos" : f === "depoimento" ? "Depoimentos" : f === "case" ? "Cases" : "Métricas"}
+                </button>
+              ))}
+            </div>
+
+            <button
+              onClick={() => { setSocialEditing(null); setSocialModal(true); }}
+              className="h-10 px-4 rounded-xl bg-gradient-to-r from-[#f57f17] to-[#ff9800] text-sm font-semibold text-white flex items-center gap-2"
+            >
+              <Plus className="w-4 h-4" />
+              Adicionar
+            </button>
+          </div>
+
+          {/* List */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {socialProofs
+              .filter(s => socialFilter === "all" || s.type === socialFilter)
+              .map(item => (
+                <div
+                  key={item.id}
+                  className={`rounded-[20px] border overflow-hidden transition ${
+                    item.active
+                      ? "border-white/10 bg-white/5"
+                      : "border-white/5 bg-white/[0.02] opacity-50"
+                  }`}
+                >
+                  {/* Imagem do case/métrica (horizontal no topo) */}
+                  {item.image && item.type !== "depoimento" && (
+                    <div className="h-32 w-full overflow-hidden bg-black/20">
+                      <img 
+                        src={item.image} 
+                        alt={item.title}
+                        className="w-full h-full object-cover"
+                      />
+                    </div>
+                  )}
+
+                  <div className="p-5">
+                    <div className="flex items-start gap-4">
+                      {/* Foto do autor (depoimento) - circular */}
+                      {item.type === "depoimento" && (
+                        <div className="flex-shrink-0">
+                          {item.image ? (
+                            <img 
+                              src={item.image} 
+                              alt={item.author || "Cliente"}
+                              className="w-14 h-14 rounded-full object-cover border-2 border-white/10"
+                            />
+                          ) : (
+                            <div className="w-14 h-14 rounded-full bg-purple-500/20 border-2 border-purple-500/30 flex items-center justify-center">
+                              <User className="w-6 h-6 text-purple-400" />
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 mb-2">
+                          <span className={`text-xs px-2 py-0.5 rounded-full ${
+                            item.type === "depoimento" ? "bg-purple-500/20 text-purple-300" :
+                            item.type === "case" ? "bg-emerald-500/20 text-emerald-300" :
+                            "bg-blue-500/20 text-blue-300"
+                          }`}>
+                            {item.type === "depoimento" ? "Depoimento" : item.type === "case" ? "Case" : "Métrica"}
+                          </span>
+                          {!item.active && (
+                            <span className="text-xs text-gray-500">Inativo</span>
+                          )}
+                        </div>
+
+                        <h4 className="text-white font-semibold">{item.title}</h4>
+                        
+                        {item.type === "depoimento" ? (
+                          <p className="text-sm text-gray-300 mt-2 italic">"{item.content}"</p>
+                        ) : (
+                          <p className="text-sm text-gray-400 mt-1 line-clamp-2">{item.content}</p>
+                        )}
+
+                        {(item.author || item.company) && (
+                          <p className="text-xs text-gray-500 mt-2">
+                            {item.author && <span className="font-medium text-gray-400">{item.author}</span>}
+                            {item.author && item.company && <span> • </span>}
+                            {item.company && <span>{item.company}</span>}
+                          </p>
+                        )}
+
+                        {item.result && (
+                          <div className="mt-3 inline-block px-3 py-1.5 rounded-lg bg-emerald-500/10 border border-emerald-500/20">
+                            <span className="text-sm text-emerald-300 font-bold">{item.result}</span>
+                          </div>
+                        )}
+                      </div>
+
+                      <div className="flex flex-col gap-2 flex-shrink-0">
+                        <button
+                          onClick={() => {
+                            setSocialProofs(prev => prev.map(s => 
+                              s.id === item.id ? { ...s, active: !s.active } : s
+                            ));
+                          }}
+                          className="h-8 w-8 rounded-lg bg-white/5 hover:bg-white/10 flex items-center justify-center"
+                          title={item.active ? "Desativar" : "Ativar"}
+                        >
+                          {item.active ? (
+                            <ToggleRight className="w-4 h-4 text-emerald-400" />
+                          ) : (
+                            <ToggleLeft className="w-4 h-4 text-gray-500" />
+                          )}
+                        </button>
+                        <button
+                          onClick={() => { setSocialEditing(item); setSocialModal(true); }}
+                          className="h-8 w-8 rounded-lg bg-white/5 hover:bg-white/10 flex items-center justify-center"
+                        >
+                          <Edit3 className="w-4 h-4 text-gray-400" />
+                        </button>
+                        <button
+                          onClick={() => {
+                            if (confirm("Remover este item?")) {
+                              setSocialProofs(prev => prev.filter(s => s.id !== item.id));
+                            }
+                          }}
+                          className="h-8 w-8 rounded-lg bg-white/5 hover:bg-red-500/10 flex items-center justify-center"
+                        >
+                          <Trash2 className="w-4 h-4 text-red-400" />
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ))}
+          </div>
+
+          {socialProofs.filter(s => socialFilter === "all" || s.type === socialFilter).length === 0 && (
+            <div className="text-center py-12 text-gray-500">
+              <Star className="w-8 h-8 mx-auto mb-2 opacity-50" />
+              <p>Nenhuma prova social encontrada</p>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* PLAYGROUND TAB */}
+      {tab === "playground" && (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          {/* Chat */}
+          <div className="rounded-[28px] border border-white/10 bg-white/5 flex flex-col h-[600px]">
+            <div className="p-4 border-b border-white/10">
+              <h3 className="text-white font-bold flex items-center gap-2">
+                <MessageSquare className="w-5 h-5 text-[#f57f17]" />
+                Testar Agente
+              </h3>
+              <p className="text-gray-500 text-sm">Simule conversas para validar respostas</p>
+            </div>
+
+            {/* Messages */}
+            <div className="flex-1 overflow-y-auto p-4 space-y-3">
+              {playHistory.length === 0 ? (
+                <div className="h-full flex flex-col items-center justify-center text-gray-500">
+                  <TestTube2 className="w-8 h-8 mb-2" />
+                  <p>Envie uma mensagem para testar</p>
+                </div>
+              ) : (
+                playHistory.map((msg, i) => (
+                  <div key={i} className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
+                    <div className={`max-w-[80%] rounded-2xl px-4 py-2 ${
+                      msg.role === "user" 
+                        ? "bg-[#f57f17]/20 text-white" 
+                        : "bg-white/5 border border-white/10 text-gray-200"
+                    }`}>
+                      <p className="text-sm whitespace-pre-wrap">{msg.text}</p>
+                    </div>
+                  </div>
+                ))
+              )}
+              {playLoading && (
+                <div className="flex justify-start">
+                  <div className="bg-white/5 border border-white/10 rounded-2xl px-4 py-2">
+                    <Loader2 className="w-4 h-4 text-gray-400 animate-spin" />
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Input */}
+            <div className="p-4 border-t border-white/10">
+              <div className="flex gap-2">
+                <input
+                  value={playInput}
+                  onChange={e => setPlayInput(e.target.value)}
+                  onKeyDown={e => e.key === "Enter" && !e.shiftKey && handlePlayground()}
+                  placeholder="Digite uma mensagem..."
+                  className="flex-1 h-11 px-4 rounded-xl bg-black/30 border border-white/10 text-sm text-gray-200 outline-none"
+                />
+                <button
+                  onClick={handlePlayground}
+                  disabled={playLoading || !playInput.trim()}
+                  className="h-11 px-4 rounded-xl bg-gradient-to-r from-[#f57f17] to-[#ff9800] text-sm font-semibold text-white disabled:opacity-50 flex items-center gap-2"
+                >
+                  <Send className="w-4 h-4" />
+                </button>
+              </div>
+              <button
+                onClick={() => setPlayHistory([])}
+                className="mt-2 text-xs text-gray-500 hover:text-gray-400"
+              >
+                Limpar conversa
+              </button>
+            </div>
+          </div>
+
+          {/* Info Panel */}
+          <div className="space-y-6">
+            <div className="rounded-[28px] border border-white/10 bg-white/5 p-6">
+              <h3 className="text-white font-bold mb-4">Como funciona</h3>
+              <div className="space-y-3 text-sm text-gray-400">
+                <p>1. O playground busca na Base de Conhecimento</p>
+                <p>2. Se encontrar match, usa a resposta cadastrada</p>
+                <p>3. Se não encontrar, sugere adicionar ao KB</p>
+                <p>4. Em produção, usa o prompt + Claude API</p>
+              </div>
+            </div>
+
+            <div className="rounded-[28px] border border-white/10 bg-white/5 p-6">
+              <h3 className="text-white font-bold mb-4">Sugestões de teste</h3>
+              <div className="space-y-2">
+                {["Quanto custa?", "Como funciona?", "Vocês têm suporte?", "Qual o prazo?"].map(q => (
+                  <button
+                    key={q}
+                    onClick={() => setPlayInput(q)}
+                    className="w-full text-left px-3 py-2 rounded-xl bg-white/5 hover:bg-white/10 text-sm text-gray-300 transition"
+                  >
+                    {q}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="rounded-[28px] border border-emerald-500/20 bg-emerald-500/5 p-6">
+              <h3 className="text-emerald-300 font-bold mb-2 flex items-center gap-2">
+                <Zap className="w-5 h-5" />
+                Dica
+              </h3>
+              <p className="text-sm text-gray-400">
+                Adicione perguntas frequentes ao KB para melhorar a qualidade das respostas automáticas.
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODALS */}
+
+      {/* Template Modal */}
+      {templateModal && (
+        <Modal title="Templates de Prompt" onClose={() => setTemplateModal(false)}>
+          <div className="space-y-3 max-h-96 overflow-y-auto">
+            {PROMPT_TEMPLATES.map(t => (
+              <div key={t.id} className="p-4 rounded-xl border border-white/10 bg-white/5 hover:bg-white/10 transition">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="text-white font-semibold">{t.name}</p>
+                    <p className="text-gray-500 text-sm mt-1">{t.description}</p>
+                    <div className="flex gap-1 mt-2">
+                      {t.tags.map(tag => (
+                        <span key={tag} className="text-xs px-2 py-0.5 rounded-full bg-white/5 text-gray-400">
+                          {tag}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => handleUseTemplate(t)}
+                    className="h-8 px-3 rounded-lg bg-[#f57f17]/20 text-[#f57f17] text-sm font-medium"
+                  >
+                    Usar
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </Modal>
+      )}
+
+      {/* KB Modal */}
+      {kbModal && (
+        <KbModal
+          item={kbEditing}
+          saving={kbSaving}
+          onClose={() => { setKbModal(false); setKbEditing(null); }}
+          onSave={handleSaveKb}
+        />
+      )}
+
+      {/* Import Modal */}
+      {importModal && (
+        <Modal title="Importar Base de Conhecimento" onClose={() => setImportModal(false)}>
+          <div className="space-y-4">
+            <p className="text-sm text-gray-400">
+              Importe um arquivo JSON com array de objetos contendo: question, answer, category, priority, tags
+            </p>
+            <div className="border-2 border-dashed border-white/10 rounded-xl p-8 text-center">
+              <input
+                type="file"
+                accept=".json"
+                onChange={e => e.target.files?.[0] && handleImportKb(e.target.files[0])}
+                className="hidden"
+                id="import-file"
+              />
+              <label htmlFor="import-file" className="cursor-pointer">
+                <Upload className="w-8 h-8 text-gray-500 mx-auto mb-2" />
+                <p className="text-gray-400">Clique para selecionar arquivo</p>
+                <p className="text-xs text-gray-600 mt-1">.json</p>
+              </label>
+            </div>
+          </div>
+        </Modal>
+      )}
+
+      {/* Social Proof Modal */}
+      {socialModal && (
+        <SocialProofModal
+          item={socialEditing}
+          saving={socialSaving}
+          onClose={() => { setSocialModal(false); setSocialEditing(null); }}
+          onSave={(item) => {
+            setSocialSaving(true);
+            setTimeout(() => {
+              if (item.id) {
+                setSocialProofs(prev => prev.map(s => s.id === item.id ? item : s));
+              } else {
+                setSocialProofs(prev => [...prev, { ...item, id: `sp-${Date.now()}`, created_at: new Date().toISOString() }]);
+              }
+              setSocialModal(false);
+              setSocialEditing(null);
+              setSocialSaving(false);
+              showToast("success", item.id ? "Atualizado!" : "Adicionado!");
+            }, 300);
+          }}
+        />
+      )}
+
+      {/* Toast */}
+      {toast && (
+        <div className={`fixed bottom-4 right-4 px-4 py-3 rounded-xl flex items-center gap-2 ${
+          toast.type === "success" ? "bg-emerald-500/20 border border-emerald-500/30 text-emerald-300" :
+          "bg-red-500/20 border border-red-500/30 text-red-300"
+        }`}>
+          {toast.type === "success" ? <CheckCircle2 className="w-4 h-4" /> : <XCircle className="w-4 h-4" />}
+          {toast.text}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ============ COMPONENTS ============
+
+function StatCard({ icon: Icon, label, value, color }: { icon: any; label: string; value: any; color?: string }) {
+  return (
+    <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
+      <div className="flex items-center gap-2 mb-1">
+        <Icon className="w-4 h-4 text-gray-500" />
+        <span className="text-xs text-gray-500">{label}</span>
+      </div>
+      <p className={`text-xl font-bold ${color || "text-white"}`}>{value}</p>
+    </div>
+  );
+}
+
+function Modal({ title, children, onClose }: { title: string; children: React.ReactNode; onClose: () => void }) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+      <div className="w-full max-w-lg rounded-[28px] border border-white/10 bg-[#0a0a0a] p-6">
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-white font-bold text-lg">{title}</h3>
+          <button onClick={onClose} className="h-8 w-8 rounded-lg bg-white/5 hover:bg-white/10 flex items-center justify-center">
+            <X className="w-4 h-4 text-gray-400" />
+          </button>
+        </div>
+        {children}
+      </div>
+    </div>
+  );
+}
+
+function KbModal({ item, saving, onClose, onSave }: { 
+  item: KnowledgeItem | null; 
+  saving: boolean; 
+  onClose: () => void; 
+  onSave: (item: KnowledgeItem) => void;
+}) {
+  const [question, setQuestion] = useState(item?.question || "");
+  const [answer, setAnswer] = useState(item?.answer || "");
+  const [category, setCategory] = useState(item?.category || "");
+  const [priority, setPriority] = useState(item?.priority || 3);
+  const [tags, setTags] = useState((item?.tags || []).join(", "));
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+      <div className="w-full max-w-2xl rounded-[28px] border border-white/10 bg-[#0a0a0a] p-6">
+        <div className="flex items-center justify-between mb-6">
+          <h3 className="text-white font-bold text-lg">{item?.id ? "Editar FAQ" : "Nova FAQ"}</h3>
+          <button onClick={onClose} className="h-8 w-8 rounded-lg bg-white/5 hover:bg-white/10 flex items-center justify-center">
+            <X className="w-4 h-4 text-gray-400" />
+          </button>
+        </div>
+
+        <div className="space-y-4">
+          <div>
+            <label className="text-xs text-gray-500">Pergunta</label>
+            <input
+              value={question}
+              onChange={e => setQuestion(e.target.value)}
+              className="w-full h-11 mt-1 px-4 rounded-xl bg-black/30 border border-white/10 text-sm text-gray-200 outline-none"
+              placeholder="Ex: Quanto custa o plano?"
+            />
+          </div>
+
+          <div>
+            <label className="text-xs text-gray-500">Resposta</label>
+            <textarea
+              value={answer}
+              onChange={e => setAnswer(e.target.value)}
+              className="w-full h-32 mt-1 p-4 rounded-xl bg-black/30 border border-white/10 text-sm text-gray-200 outline-none resize-none"
+              placeholder="Ex: Temos planos a partir de R$ 297/mês..."
+            />
+          </div>
+
+          <div className="grid grid-cols-3 gap-4">
             <div>
-              <p className="text-xs text-gray-500">Tags (separadas por vírgula)</p>
+              <label className="text-xs text-gray-500">Categoria</label>
+              <input
+                value={category}
+                onChange={e => setCategory(e.target.value)}
+                className="w-full h-11 mt-1 px-4 rounded-xl bg-black/30 border border-white/10 text-sm text-gray-200 outline-none"
+                placeholder="Preço"
+              />
+            </div>
+            <div>
+              <label className="text-xs text-gray-500">Prioridade</label>
+              <select
+                value={priority}
+                onChange={e => setPriority(Number(e.target.value))}
+                className="w-full h-11 mt-1 px-4 rounded-xl bg-black/30 border border-white/10 text-sm text-gray-200 outline-none"
+              >
+                {[1,2,3,4,5].map(n => <option key={n} value={n} className="bg-black">{n}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="text-xs text-gray-500">Tags (vírgula)</label>
               <input
                 value={tags}
-                onChange={(e) => setTags(e.target.value)}
-                className="mt-1 w-full h-10 rounded-2xl border border-white/10 bg-black/40 text-gray-200 text-sm px-3 outline-none focus:ring-2 focus:ring-[#f57f17]"
-                placeholder="parcelamento, CRM, suporte..."
+                onChange={e => setTags(e.target.value)}
+                className="w-full h-11 mt-1 px-4 rounded-xl bg-black/30 border border-white/10 text-sm text-gray-200 outline-none"
+                placeholder="preço, plano"
               />
             </div>
           </div>
         </div>
 
-        <div className="px-6 py-4 border-t border-white/10 flex items-center justify-between">
-          <p className="text-xs text-gray-500">Dica: quanto mais específica a pergunta, melhor a IA busca o match.</p>
-
-          <div className="flex items-center gap-2">
-            <button
-              onClick={onClose}
-              className="h-10 px-4 rounded-2xl border border-white/10 bg-white/5 hover:bg-white/10 transition-all text-sm font-semibold text-gray-200"
-            >
-              Cancelar
-            </button>
-            <button
-              disabled={saving}
-              onClick={() =>
-                onSave({
-                  id: item?.id,
-                  question,
-                  answer,
-                  category: category || null,
-                  priority,
-                  tags: tags
-                    .split(",")
-                    .map((t) => t.trim())
-                    .filter(Boolean),
-                })
-              }
-              className={cn(
-                "h-10 px-4 rounded-2xl border transition-all flex items-center gap-2 text-sm font-semibold",
-                saving
-                  ? "border-[#f57f17]/20 bg-[#f57f17]/10 text-[#f57f17]/60 cursor-not-allowed"
-                  : "border-[#f57f17]/35 bg-[#f57f17]/15 text-white hover:bg-[#f57f17]/20 shadow-[0_0_0_1px_rgba(245,127,23,0.12)]"
-              )}
-            >
-              {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
-              Salvar
-            </button>
-          </div>
+        <div className="flex justify-end gap-2 mt-6">
+          <button onClick={onClose} className="h-10 px-4 rounded-xl bg-white/5 border border-white/10 text-sm text-gray-300">
+            Cancelar
+          </button>
+          <button
+            onClick={() => onSave({
+              id: item?.id,
+              question,
+              answer,
+              category: category || null,
+              priority,
+              tags: tags.split(",").map(t => t.trim()).filter(Boolean),
+            })}
+            disabled={saving}
+            className="h-10 px-4 rounded-xl bg-gradient-to-r from-[#f57f17] to-[#ff9800] text-sm font-semibold text-white disabled:opacity-50 flex items-center gap-2"
+          >
+            {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+            Salvar
+          </button>
         </div>
       </div>
     </div>
   );
 }
 
-// -----------------------------------------------------
-// Playground Answer Builder (mockado)
-// -----------------------------------------------------
-function clamp01(n: number) {
-  return Math.max(0, Math.min(1, n));
-}
-
-function buildMockAnswer(args: {
-  input: string;
-  ctx: PlaygroundContext;
-  sources: Array<{ question: string; category?: string | null }>;
+function SocialProofModal({ item, saving, onClose, onSave }: { 
+  item: SocialProof | null; 
+  saving: boolean; 
+  onClose: () => void; 
+  onSave: (item: SocialProof) => void;
 }) {
-  const { input, ctx, sources } = args;
+  const [type, setType] = useState<SocialProof["type"]>(item?.type || "depoimento");
+  const [title, setTitle] = useState(item?.title || "");
+  const [content, setContent] = useState(item?.content || "");
+  const [author, setAuthor] = useState(item?.author || "");
+  const [company, setCompany] = useState(item?.company || "");
+  const [result, setResult] = useState(item?.result || "");
+  const [image, setImage] = useState(item?.image || "");
+  const [active, setActive] = useState(item?.active ?? true);
 
-  // tom de voz baseado na emoção
-  const tone =
-    ctx.emotion === "frustrated"
-      ? "empático"
-      : ctx.emotion === "skeptical"
-      ? "prova social"
-      : ctx.emotion === "ready"
-      ? "fechamento"
-      : "consultivo";
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+      <div className="w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-[28px] border border-white/10 bg-[#0a0a0a] p-6">
+        <div className="flex items-center justify-between mb-6">
+          <h3 className="text-white font-bold text-lg">{item?.id ? "Editar Prova Social" : "Nova Prova Social"}</h3>
+          <button onClick={onClose} className="h-8 w-8 rounded-lg bg-white/5 hover:bg-white/10 flex items-center justify-center">
+            <X className="w-4 h-4 text-gray-400" />
+          </button>
+        </div>
 
-  const opener =
-    tone === "empático"
-      ? "Entendi — faz sentido você estar incomodado. Vamos resolver isso agora."
-      : tone === "prova social"
-      ? "Totalmente justo ter essa dúvida. Posso te mostrar como isso funciona na prática."
-      : tone === "fechamento"
-      ? "Perfeito. Vamos direto ao ponto pra você fechar com segurança."
-      : "Boa. Vou te explicar de um jeito rápido e claro.";
+        <div className="space-y-4">
+          {/* Tipo */}
+          <div>
+            <label className="text-xs text-gray-500 mb-2 block">Tipo</label>
+            <div className="flex gap-2">
+              {([
+                { key: "depoimento", label: "Depoimento", icon: Quote },
+                { key: "case", label: "Case de Sucesso", icon: Award },
+                { key: "metrica", label: "Métrica", icon: TrendingUp },
+              ] as const).map(t => (
+                <button
+                  key={t.key}
+                  type="button"
+                  onClick={() => setType(t.key)}
+                  className={`flex-1 h-11 rounded-xl flex items-center justify-center gap-2 text-sm font-medium transition ${
+                    type === t.key
+                      ? "bg-[#f57f17]/20 border border-[#f57f17]/30 text-white"
+                      : "bg-white/5 border border-white/10 text-gray-400"
+                  }`}
+                >
+                  <t.icon className="w-4 h-4" />
+                  {t.label}
+                </button>
+              ))}
+            </div>
+          </div>
 
-  const hint =
-    sources.length > 0
-      ? `\n\nBaseado na nossa base de conhecimento, aqui vai o que recomendo:`
-      : `\n\nAinda não tenho um item específico na base para isso, mas aqui vai a melhor orientação:`;
+          {/* Imagem */}
+          <div>
+            <label className="text-xs text-gray-500 mb-2 block">
+              {type === "depoimento" ? "Foto do Cliente" : "Imagem/Print"}
+            </label>
+            <div className="flex gap-4">
+              <div className="flex-1">
+                <input
+                  value={image}
+                  onChange={e => setImage(e.target.value)}
+                  className="w-full h-11 px-4 rounded-xl bg-black/30 border border-white/10 text-sm text-gray-200 outline-none"
+                  placeholder="Cole a URL da imagem..."
+                />
+                <p className="text-xs text-gray-600 mt-1">
+                  {type === "depoimento" 
+                    ? "Foto do cliente para aparecer junto ao depoimento"
+                    : "Print de resultado, gráfico ou imagem ilustrativa"
+                  }
+                </p>
+              </div>
+              
+              {/* Preview */}
+              <div className={`flex-shrink-0 ${type === "depoimento" ? "w-16 h-16" : "w-24 h-16"} rounded-xl border border-white/10 bg-black/30 overflow-hidden flex items-center justify-center`}>
+                {image ? (
+                  <img 
+                    src={image} 
+                    alt="Preview"
+                    className={`w-full h-full object-cover ${type === "depoimento" ? "rounded-full" : ""}`}
+                    onError={(e) => {
+                      (e.target as HTMLImageElement).style.display = 'none';
+                    }}
+                  />
+                ) : (
+                  <ImageIcon className="w-6 h-6 text-gray-600" />
+                )}
+              </div>
+            </div>
+          </div>
 
-  const stageLine =
-    ctx.stage === "sensível_preço"
-      ? "\n\nSe preço for o ponto principal, eu consigo te montar 2 opções (mensal e anual com desconto) + simulação de ROI."
-      : ctx.stage === "pronto"
-      ? "\n\nSe você já estiver pronto, eu te mando agora a proposta + link de pagamento e já deixo o onboarding agendado."
-      : ctx.stage === "cético"
-      ? "\n\nSe você quiser, eu te mostro 2 cases e fazemos um teste rápido com suporte humano junto (pra não ficar robótico)."
-      : "";
+          {/* Título */}
+          <div>
+            <label className="text-xs text-gray-500">Título</label>
+            <input
+              value={title}
+              onChange={e => setTitle(e.target.value)}
+              className="w-full h-11 mt-1 px-4 rounded-xl bg-black/30 border border-white/10 text-sm text-gray-200 outline-none"
+              placeholder="Ex: Aumento de 40% em conversões"
+            />
+          </div>
 
-  const closing =
-    ctx.channel === "whatsapp"
-      ? "\n\nMe diz: qual seu segmento e quantos leads/mês vocês recebem hoje?"
-      : "\n\nMe passa seu contexto (segmento e volume) que eu te respondo com números.";
+          {/* Conteúdo */}
+          <div>
+            <label className="text-xs text-gray-500">
+              {type === "depoimento" ? "Depoimento" : type === "case" ? "Descrição do Case" : "Descrição da Métrica"}
+            </label>
+            <textarea
+              value={content}
+              onChange={e => setContent(e.target.value)}
+              className="w-full h-24 mt-1 p-4 rounded-xl bg-black/30 border border-white/10 text-sm text-gray-200 outline-none resize-none"
+              placeholder={
+                type === "depoimento" 
+                  ? "Ex: Depois que implementamos a DOCA, nosso atendimento nunca mais parou..."
+                  : type === "case"
+                  ? "Ex: Restaurante que triplicou pedidos pelo WhatsApp..."
+                  : "Ex: Tempo médio de resposta reduziu de 15min para 8 segundos"
+              }
+            />
+          </div>
 
-  return `${opener}\n\nVocê perguntou: "${input}"${hint}${stageLine}${closing}`;
+          {/* Campos condicionais */}
+          <div className="grid grid-cols-2 gap-4">
+            {type === "depoimento" && (
+              <div>
+                <label className="text-xs text-gray-500">Autor</label>
+                <input
+                  value={author}
+                  onChange={e => setAuthor(e.target.value)}
+                  className="w-full h-11 mt-1 px-4 rounded-xl bg-black/30 border border-white/10 text-sm text-gray-200 outline-none"
+                  placeholder="Ex: Maria Silva"
+                />
+              </div>
+            )}
+            
+            <div>
+              <label className="text-xs text-gray-500">Empresa</label>
+              <input
+                value={company}
+                onChange={e => setCompany(e.target.value)}
+                className="w-full h-11 mt-1 px-4 rounded-xl bg-black/30 border border-white/10 text-sm text-gray-200 outline-none"
+                placeholder="Ex: Clínica Estética"
+              />
+            </div>
+
+            {(type === "case" || type === "metrica") && (
+              <div>
+                <label className="text-xs text-gray-500">Resultado</label>
+                <input
+                  value={result}
+                  onChange={e => setResult(e.target.value)}
+                  className="w-full h-11 mt-1 px-4 rounded-xl bg-black/30 border border-white/10 text-sm text-gray-200 outline-none"
+                  placeholder="Ex: +40% conversão em 30 dias"
+                />
+              </div>
+            )}
+          </div>
+
+          {/* Ativo */}
+          <div className="flex items-center justify-between p-4 rounded-xl bg-white/5 border border-white/10">
+            <div>
+              <p className="text-sm text-white font-medium">Ativo</p>
+              <p className="text-xs text-gray-500">Disponível para o agente usar</p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setActive(!active)}
+              className={`h-8 w-14 rounded-full transition ${active ? "bg-emerald-500" : "bg-gray-600"}`}
+            >
+              <div className={`h-6 w-6 rounded-full bg-white transition transform ${active ? "translate-x-7" : "translate-x-1"}`} />
+            </button>
+          </div>
+        </div>
+
+        <div className="flex justify-end gap-2 mt-6">
+          <button onClick={onClose} className="h-10 px-4 rounded-xl bg-white/5 border border-white/10 text-sm text-gray-300">
+            Cancelar
+          </button>
+          <button
+            onClick={() => onSave({
+              id: item?.id || "",
+              type,
+              title,
+              content,
+              author: author || undefined,
+              company: company || undefined,
+              result: result || undefined,
+              image: image || undefined,
+              active,
+              created_at: item?.created_at,
+            })}
+            disabled={saving || !title.trim() || !content.trim()}
+            className="h-10 px-4 rounded-xl bg-gradient-to-r from-[#f57f17] to-[#ff9800] text-sm font-semibold text-white disabled:opacity-50 flex items-center gap-2"
+          >
+            {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+            Salvar
+          </button>
+        </div>
+      </div>
+    </div>
+  );
 }

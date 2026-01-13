@@ -4,6 +4,9 @@
 // Model Context Protocol Server para DOCA Agência IA
 // ============================================
 
+// ✅ CARREGAR .env PRIMEIRO (antes de qualquer import de services)
+import 'dotenv/config';
+
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import {
@@ -21,6 +24,7 @@ import { aiService } from './services/ai.service.js';
 import { analysisService } from './services/analysis.service.js';
 import { emotionService } from './services/emotion.service.js';
 import { supabaseService } from './services/supabase.service.js';
+import { clientService } from './services/client.service.js';
 
 // ============================================
 // Server Configuration
@@ -650,13 +654,15 @@ async function main() {
     logger.info(`${SERVER_NAME} running on stdio`);
     logger.info(`Tools available: ${TOOLS.length}`);
     logger.info(`Resources available: ${RESOURCES.length}`);
+    // Listar clientes carregados
+console.log('📁 Clientes disponíveis:', clientService.listClients());
     logger.separator();
   } catch (error) {
     logger.error('Failed to start server', error);
     process.exit(1);
+  
   }
 }
-
 // Handle shutdown
 process.on('SIGINT', () => {
   logger.info('Shutting down...');

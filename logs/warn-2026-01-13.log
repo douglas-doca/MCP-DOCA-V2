@@ -1,0 +1,2 @@
+{"timestamp":"2026-01-13T05:18:10.385Z","level":"warn","message":"API key not set for provider: openai","context":"AI"}
+{"timestamp":"2026-01-13T05:18:10.386Z","level":"warn","message":"Supabase credentials not configured","context":"SUPABASE"}

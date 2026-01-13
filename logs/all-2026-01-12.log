@@ -1,0 +1,24 @@
+{"timestamp":"2026-01-12T13:30:25.756Z","level":"info","message":"AI Service initialized","data":{"provider":"anthropic","model":"claude-sonnet-4-20250514"},"context":"AI"}
+{"timestamp":"2026-01-12T13:30:25.798Z","level":"info","message":"Supabase Service initialized","data":{"url":"https://llfwrwyqaswehksgvcyr.supabase.co"},"context":"SUPABASE"}
+{"timestamp":"2026-01-12T13:30:28.438Z","level":"info","message":"Response Agent initialized","data":{"tone":"professional","maxContext":10},"context":"AGENT"}
+{"timestamp":"2026-01-12T13:30:28.441Z","level":"info","message":"WAHA Service initialized","data":{"baseUrl":"http://waha:3000","session":"default","apiKey":"***set***"},"context":"AGENT"}
+{"timestamp":"2026-01-12T13:30:28.443Z","level":"info","message":"Sequence registered: Sequência de Boas-vindas","context":"AGENT"}
+{"timestamp":"2026-01-12T13:30:28.448Z","level":"info","message":"Sequence registered: Sequência de Reengajamento","context":"AGENT"}
+{"timestamp":"2026-01-12T13:30:28.452Z","level":"info","message":"Sequence registered: Sequência Pós-Demonstração","context":"AGENT"}
+{"timestamp":"2026-01-12T13:30:28.454Z","level":"info","message":"Prospecting Agent initialized","data":{"enabled":false,"maxDaily":100,"businessHours":"9h-18h"},"context":"AGENT"}
+{"timestamp":"2026-01-12T13:30:28.457Z","level":"info","message":"Supabase Service ready","context":"SUPABASE"}
+{"timestamp":"2026-01-12T13:30:28.466Z","level":"info","message":"Webhook server running on http://0.0.0.0:3002"}
+{"timestamp":"2026-01-12T13:30:28.469Z","level":"info","message":"Available endpoints:"}
+{"timestamp":"2026-01-12T13:30:28.470Z","level":"info","message":"  GET  /              - Dashboard"}
+{"timestamp":"2026-01-12T13:30:28.471Z","level":"info","message":"  POST /webhook/waha  - WAHA webhook"}
+{"timestamp":"2026-01-12T13:30:28.471Z","level":"info","message":"  GET  /health        - Health check"}
+{"timestamp":"2026-01-12T13:30:28.471Z","level":"info","message":"  GET  /stats         - Statistics"}
+{"timestamp":"2026-01-12T13:30:28.472Z","level":"info","message":"  POST /send          - Send message"}
+{"timestamp":"2026-01-12T13:30:28.473Z","level":"info","message":"  POST /api/chat      - Chat demo endpoint (Landing)"}
+{"timestamp":"2026-01-12T13:30:28.474Z","level":"info","message":"  POST /api/conversations/pause  - Pause conversation"}
+{"timestamp":"2026-01-12T13:30:28.474Z","level":"info","message":"  POST /api/conversations/resume - Resume conversation"}
+{"timestamp":"2026-01-12T13:30:28.476Z","level":"info","message":"Webhook server is ready to receive messages!"}
+{"timestamp":"2026-01-12T13:30:28.477Z","level":"info","message":"Configure WAHA to send webhooks to: POST /webhook/waha"}
+{"timestamp":"2026-01-12T13:31:25.034Z","level":"info","message":"Received SIGINT, shutting down gracefully..."}
+{"timestamp":"2026-01-12T13:31:25.039Z","level":"info","message":"Webhook server stopped"}
+{"timestamp":"2026-01-12T13:31:25.040Z","level":"info","message":"Supabase Service closed","context":"SUPABASE"}

@@ -12,14 +12,11 @@ export type Conversation = {
   created_at?: string;
   updated_at?: string;
   last_message_at?: string;
-
-  // extras que seu backend manda
+  tenant_id?: string;
   emotion_history?: any[];
   current_emotion?: string;
   emotion_score?: number;
   temperature?: number;
-
-  // opcional (nem sempre vem)
   last_message?: string;
 };
 
@@ -32,11 +29,9 @@ export type Lead = {
   score?: number;
   status?: string;
   tags?: string[];
-
   created_at?: string;
   updated_at?: string;
-
-  // extras do seu backend
+  tenant_id?: string;
   emotion_profile?: any;
   health_score?: number;
   stage?: string;
@@ -52,7 +47,15 @@ export type Message = {
   timestamp?: string;
 };
 
-// shape REAL do backend atual (/api/stats)
+export type Tenant = {
+  id: string;
+  slug: string;
+  name: string;
+  phone?: string;
+  specialty?: string;
+  active: boolean;
+};
+
 export type RawStats = {
   totalLeads: number;
   totalConversations: number;
@@ -60,25 +63,18 @@ export type RawStats = {
   activeConversations: number;
   newLeads: number;
   qualifiedLeads: number;
-
   conversationsByStatus?: Record<string, number>;
   leadsByStatus?: Record<string, number>;
 };
 
-// shape que o DashboardV2 espera
 export type DashboardV2Stats = {
   conversations_total?: number;
   leads_total?: number;
   qualified_total?: number;
   avg_response_time_seconds?: number;
-
   emotions_distribution?: Record<string, number>;
   activity_last_7_days?: Array<{ name: string; value: number }>;
 };
-
-// ------------------------------------------------
-// Agent ON/OFF (global)
-// ------------------------------------------------
 
 export type AgentStatus = {
   enabled: boolean;
@@ -91,18 +87,13 @@ export type AgentStatus = {
 // ------------------------------------------------
 
 function resolveBaseUrl() {
-  // ✅ 1) Se tiver setado no .env, usa
   const envUrl = import.meta.env.VITE_API_URL as string | undefined;
   if (envUrl) return envUrl.replace(/\/$/, "");
 
-  // ✅ 2) Default: usa o host atual (DEV e PROD)
-  // Ex: https://mcp.docaperformance.com.br -> https://mcp.docaperformance.com.br/api
-  // Ex: https://dev.mcp.docaperformance.com.br -> https://dev.mcp.docaperformance.com.br/api
   if (typeof window !== "undefined") {
     return `${window.location.origin}/api`;
   }
 
-  // ✅ 3) fallback SSR / build
   return "http://localhost:3002/api";
 }
 
@@ -125,7 +116,6 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     throw new Error(`API error ${res.status}: ${text || res.statusText}`);
   }
 
-  // 204 no-content safety
   if (res.status === 204) return undefined as T;
 
   return res.json() as Promise<T>;
@@ -143,8 +133,6 @@ export function mapStatsToDashboardV2(stats: RawStats | any): DashboardV2Stats {
     leads_total: stats.totalLeads ?? 0,
     qualified_total: stats.qualifiedLeads ?? 0,
     avg_response_time_seconds: stats.avgResponseTimeSeconds ?? 0,
-
-    // opcionais caso venha no futuro
     emotions_distribution: stats.emotionsDistribution ?? {},
     activity_last_7_days: stats.activityLast7Days ?? [],
   };
@@ -159,12 +147,20 @@ export async function getStats(): Promise<DashboardV2Stats> {
   return mapStatsToDashboardV2(raw);
 }
 
-export async function getConversations(limit = 50): Promise<Conversation[]> {
-  return request<Conversation[]>(`/conversations?limit=${limit}`);
+export async function getTenants(): Promise<Tenant[]> {
+  return request<Tenant[]>("/tenants");
 }
 
-export async function getLeads(limit = 50): Promise<Lead[]> {
-  return request<Lead[]>(`/leads?limit=${limit}`);
+export async function getConversations(limit = 50, tenantId?: string): Promise<Conversation[]> {
+  let url = `/conversations?limit=${limit}`;
+  if (tenantId) url += `&tenant_id=${tenantId}`;
+  return request<Conversation[]>(url);
+}
+
+export async function getLeads(limit = 50, tenantId?: string): Promise<Lead[]> {
+  let url = `/leads?limit=${limit}`;
+  if (tenantId) url += `&tenant_id=${tenantId}`;
+  return request<Lead[]>(url);
 }
 
 export async function getMessages(conversationId: string, limit = 50) {

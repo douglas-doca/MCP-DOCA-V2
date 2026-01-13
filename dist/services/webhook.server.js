@@ -1,6 +1,11 @@
+// src/services/webhook.server.ts
 // ============================================
 // MCP-DOCA-V2 - Webhook Server + Dashboard
 // Recebe mensagens do WAHA e serve o Dashboard
+// + Agent Studio APIs (humanizer config + simulator)
+// + Landing Chat endpoint /api/chat
+// + ✅ HANDOFF: quando humano interfere, pausa o bot por chat
+// + ✅ suporta @lid corretamente (evita "No LID for user")
 // ============================================
 import * as http from "http";
 import * as fs from "fs";
@@ -8,10 +13,16 @@ import * as path from "path";
 import { URL } from "url";
 import { logger } from "../utils/logger.js";
 import { responseAgent } from "./response.agent.js";
-import { wahaService } from "./waha.service.js";
+import { clientService } from "./client.service.js";
+import { wahaService } from "./index.js";
 import { supabaseService } from "./supabase.service.js";
 import { emotionService } from "./emotion.service.js";
 import { analysisService } from "./analysis.service.js";
+import { CalendarService } from "./calendar/calendar.service.js";
+// ✅ NEW: WebhookService (Landing/Chat orchestration)
+import { webhookService } from "./webhook.service.js";
+// ✅ NEW: bot-id tracking to detect human intervention
+import { isBotSentId } from "./waha.service.js";
 // MIME types for static files
 const MIME_TYPES = {
     ".html": "text/html",
@@ -27,12 +38,161 @@ const MIME_TYPES = {
     ".woff2": "font/woff2",
     ".ttf": "font/ttf",
 };
+// ==============================
+// Agent Studio - Settings Keys
+// ==============================
+const SETTINGS_KEYS = {
+    agentPrompt: "agent_prompt",
+    humanizerConfig: "agent_humanizer_config",
+    agentEnabled: "agent_enabled", // ✅ global ON/OFF
+};
+function getDefaultHumanizerConfig() {
+    const h = responseAgent?.config?.humanizer || {
+        maxBubbles: 5,
+        maxSentencesPerBubble: 4,
+        maxEmojiPerBubble: 3,
+        bubbleCharSoftLimit: 220,
+        bubbleCharHardLimit: 420,
+        delay: {
+            base: 420,
+            perChar: 14,
+            cap: 1650,
+            anxiousMultiplier: 0.65,
+            skepticalMultiplier: 1.15,
+            frustratedMultiplier: 1.0,
+            excitedMultiplier: 0.9,
+        },
+        stageBehavior: {
+            cold: { maxBubbles: 4, requireQuestion: false, ctaLevel: "soft" },
+            warm: { maxBubbles: 5, requireQuestion: false, ctaLevel: "medium" },
+            hot: { maxBubbles: 5, requireQuestion: false, ctaLevel: "hard" },
+        },
+        saveChunksToDB: true,
+        saveTypingChunks: true,
+    };
+    return {
+        version: "v4",
+        humanizer: h,
+        updated_at: new Date().toISOString(),
+    };
+}
+async function getSetting(key) {
+    const result = await supabaseService.request("GET", "settings", {
+        query: `key=eq.${key}`,
+    });
+    if (result && result[0])
+        return result[0];
+    return null;
+}
+async function upsertSetting(key, value) {
+    const now = new Date().toISOString();
+    const existing = await supabaseService.request("GET", "settings", {
+        query: `key=eq.${key}`,
+    });
+    if (existing && existing.length > 0) {
+        const patched = await supabaseService.request("PATCH", "settings", {
+            query: `key=eq.${key}`,
+            body: { value, updated_at: now },
+        });
+        return !!patched;
+    }
+    const created = await supabaseService.request("POST", "settings", {
+        body: {
+            key,
+            value,
+            created_at: now,
+            updated_at: now,
+        },
+    });
+    return !!created;
+}
+// ==============================
+// ✅ Agent ON/OFF (global) helpers
+// ==============================
+async function getAgentEnabled() {
+    const row = await getSetting(SETTINGS_KEYS.agentEnabled);
+    // value esperado: { enabled: boolean }
+    const enabledValue = row?.value?.enabled;
+    return {
+        enabled: typeof enabledValue === "boolean" ? enabledValue : true, // default ON se não existir
+        updated_at: row?.updated_at || null,
+    };
+}
+async function setAgentEnabled(enabled) {
+    return upsertSetting(SETTINGS_KEYS.agentEnabled, { enabled: !!enabled });
+}
+const HANDOFF_TTL_MINUTES = Number(process.env.HANDOFF_TTL_MINUTES || 24 * 60); // 24h default
+function addMinutesISO(minutes) {
+    const d = new Date();
+    d.setMinutes(d.getMinutes() + Math.max(1, minutes));
+    return d.toISOString();
+}
+function nowISO() {
+    return new Date().toISOString();
+}
+function isPauseActive(state) {
+    if (!state || !state.paused)
+        return false;
+    if (!state.pausedUntil)
+        return true;
+    return new Date(state.pausedUntil).getTime() > Date.now();
+}
+const PAUSED_CHATS = new Map();
+function getChatKey(chatId) {
+    return String(chatId || "").trim();
+}
+function pauseChat(chatId, reason, by, ttlMinutes) {
+    const key = getChatKey(chatId);
+    if (!key)
+        return;
+    const until = ttlMinutes === 0 ? null : addMinutesISO(ttlMinutes ?? HANDOFF_TTL_MINUTES);
+    PAUSED_CHATS.set(key, {
+        paused: true,
+        pausedAt: nowISO(),
+        pausedUntil: until,
+        reason,
+        by,
+    });
+    // ✅ FIX: logger.* expected 1-2 args; put "HANDOFF" as meta tag
+    logger.warn("Conversation PAUSED (handoff)", { chatId: key, reason, until, by, tag: "HANDOFF" });
+}
+function resumeChat(chatId) {
+    const key = getChatKey(chatId);
+    if (!key)
+        return;
+    PAUSED_CHATS.delete(key);
+    // ✅ FIX: logger.* expected 1-2 args; put "HANDOFF" as meta tag
+    logger.info("Conversation RESUMED", { chatId: key, tag: "HANDOFF" });
+}
+function isChatPaused(chatId) {
+    const key = getChatKey(chatId);
+    const st = PAUSED_CHATS.get(key);
+    if (!st)
+        return false;
+    if (!isPauseActive(st)) {
+        PAUSED_CHATS.delete(key);
+        return false;
+    }
+    return true;
+}
+// ============================================
 export class WebhookServer {
     server = null;
     config;
     routes;
     processingQueue = new Set();
+    calendarService = new CalendarService();
+    processedMessageIds = new Map();
+    processedTTLms = 2 * 60 * 1000; // 2 min
     constructor(config) {
+        const blockedFromEnv = String(process.env.BLOCKED_NUMBERS || "")
+            .split(",")
+            .map((s) => s.trim())
+            .filter(Boolean);
+        const allowedFromEnv = String(process.env.ALLOWED_NUMBERS || "")
+            .split(",")
+            .map((s) => s.trim())
+            .filter(Boolean);
         this.config = {
             port: config?.port || parseInt(process.env.WEBHOOK_PORT || "3002"),
             host: config?.host || "0.0.0.0",
@@ -42,35 +202,41 @@ export class WebhookServer {
             typingDelayMs: config?.typingDelayMs || 2000,
             ignoreSelf: config?.ignoreSelf ?? true,
             ignoreGroups: config?.ignoreGroups ?? true,
-            allowedNumbers: config?.allowedNumbers,
-            blockedNumbers: config?.blockedNumbers,
+            allowedNumbers: config?.allowedNumbers ?? (allowedFromEnv.length ? allowedFromEnv : undefined),
+            blockedNumbers: config?.blockedNumbers ?? (blockedFromEnv.length ? blockedFromEnv : undefined),
             staticDir: config?.staticDir || "./public",
         };
         this.routes = new Map();
         this.setupRoutes();
     }
-    // ============ Route Setup ============
     setupRoutes() {
-        // POST /webhook/waha - Principal endpoint para WAHA
         this.addRoute("POST", "/webhook/waha", this.handleWAHAWebhook.bind(this));
-        // POST /webhook/message - Endpoint alternativo
         this.addRoute("POST", "/webhook/message", this.handleWAHAWebhook.bind(this));
-        // GET /health - Health check
         this.addRoute("GET", "/health", this.handleHealth.bind(this));
-        // GET /stats - Estatísticas
         this.addRoute("GET", "/stats", this.handleStats.bind(this));
-        // POST /send - Enviar mensagem manual
         this.addRoute("POST", "/send", this.handleSendMessage.bind(this));
-        // GET /conversations?phone=...
         this.addRoute("GET", "/conversations", this.handleGetConversation.bind(this));
         // ========= Dashboard APIs =========
         this.addRoute("GET", "/api/conversations", this.handleAPIConversations.bind(this));
         this.addRoute("GET", "/api/leads", this.handleAPILeads.bind(this));
+        this.addRoute("GET", "/api/tenants", this.handleAPITenants.bind(this));
+        this.addRoute("POST", "/api/tenants", this.handleAPICreateTenant.bind(this));
+        this.addRoute("PATCH", "/api/tenants", this.handleAPIUpdateTenant.bind(this));
+        this.addRoute("GET", "/api/tenants/metrics", this.handleAPITenantMetrics.bind(this));
+        // ========= Users =========
+        this.addRoute("GET", "/api/users", this.handleAPIUsers.bind(this));
+        this.addRoute("POST", "/api/users", this.handleAPICreateUser.bind(this));
+        this.addRoute("PATCH", "/api/users", this.handleAPIUpdateUser.bind(this));
+        this.addRoute("DELETE", "/api/users", this.handleAPIDeleteUser.bind(this));
+        this.addRoute("PATCH", "/api/leads", this.handleAPIUpdateLead.bind(this)); // ✅ Update lead
         this.addRoute("GET", "/api/messages", this.handleAPIMessages.bind(this));
         this.addRoute("GET", "/api/stats", this.handleAPIStats.bind(this));
         // ========= Settings =========
         this.addRoute("GET", "/api/settings", this.handleAPIGetSettings.bind(this));
         this.addRoute("POST", "/api/settings", this.handleAPISaveSettings.bind(this));
+        // ========= Calendar =========
+        this.addRoute("GET", "/api/calendar/availability", this.handleAPICalendarAvailability.bind(this));
+        this.addRoute("POST", "/api/calendar/schedule", this.handleAPICalendarSchedule.bind(this));
         // ========= Knowledge =========
         this.addRoute("GET", "/api/knowledge", this.handleAPIGetKnowledge.bind(this));
         this.addRoute("POST", "/api/knowledge", this.handleAPISaveKnowledge.bind(this));
@@ -87,6 +253,16 @@ export class WebhookServer {
         this.addRoute("POST", "/api/analysis/approve-send", this.handleAPIAnalysisApproveSend.bind(this));
         // ✅ Chat demo (mockup landing)
         this.addRoute("POST", "/api/chat", this.handleAPIChat.bind(this));
+        // ========= ✅ Agent Studio =========
+        this.addRoute("GET", "/api/agent/humanizer-config", this.handleAgentGetHumanizerConfig.bind(this));
+        this.addRoute("PUT", "/api/agent/humanizer-config", this.handleAgentSaveHumanizerConfig.bind(this));
+        this.addRoute("POST", "/api/agent/simulate", this.handleAgentSimulate.bind(this));
+        // ========= ✅ HANDOFF endpoints =========
+        this.addRoute("POST", "/api/conversations/pause", this.handlePauseConversation.bind(this));
+        this.addRoute("POST", "/api/conversations/resume", this.handleResumeConversation.bind(this));
+        // ========= ✅ Agent ON/OFF (global) =========
+        this.addRoute("GET", "/api/agent/status", this.handleAgentStatus.bind(this));
+        this.addRoute("PUT", "/api/agent/status", this.handleAgentSetStatus.bind(this));
     }
     addRoute(method, routePath, handler) {
         if (!this.routes.has(method))
@@ -94,25 +270,19 @@ export class WebhookServer {
         this.routes.get(method).set(routePath, handler);
     }
     // ============ Static File Server ============
-    async serveStaticFile(req, res, urlPath) {
-        // ✅ Suporte: /chat -> /chat/index.html
-        if (urlPath === "/chat") {
+    async serveStaticFile(_req, res, urlPath) {
+        if (urlPath === "/chat")
             urlPath = "/chat/index.html";
-        }
         let filePath = urlPath === "/" ? "/index.html" : urlPath;
-        // Remove /dashboard prefix if present
         if (filePath.startsWith("/dashboard")) {
             filePath = filePath.replace("/dashboard", "") || "/index.html";
         }
         const fullPath = path.join(this.config.staticDir, filePath);
-        // Security: prevent directory traversal
         const normalizedPath = path.normalize(fullPath);
-        if (!normalizedPath.startsWith(path.resolve(this.config.staticDir))) {
+        if (!normalizedPath.startsWith(path.resolve(this.config.staticDir)))
             return false;
-        }
         try {
             if (!fs.existsSync(normalizedPath)) {
-                // SPA fallback: serve index.html para rotas sem extensão
                 if (!filePath.includes(".")) {
                     const indexPath = path.join(this.config.staticDir, "index.html");
                     if (fs.existsSync(indexPath)) {
@@ -148,7 +318,7 @@ export class WebhookServer {
             return true;
         }
         catch (error) {
-            logger.error("Error serving static file", error, "STATIC");
+            logger.error("Error serving static file", error);
             return false;
         }
     }
@@ -157,12 +327,218 @@ export class WebhookServer {
         try {
             const url = new URL(req.url, `http://${req.headers.host}`);
             const limit = parseInt(url.searchParams.get("limit") || "50");
-            const conversations = await supabaseService.getConversations(limit);
+            const tenantId = url.searchParams.get("tenant_id") || undefined;
+            let conversations;
+            if (tenantId) {
+                conversations = await supabaseService.request("GET", "conversations", {
+                    query: `tenant_id=eq.${tenantId}\&order=updated_at.desc\&limit=${limit}`,
+                });
+            }
+            else {
+                conversations = await supabaseService.getConversations(limit);
+            }
             this.sendJSON(res, 200, conversations || []);
         }
         catch (error) {
-            logger.error("Error getting conversations", error, "API");
+            logger.error("Error getting conversations", error);
             this.sendJSON(res, 500, { error: "Failed to get conversations" });
+        }
+    }
+    // ============ Tenants API (Multi-tenant) ============
+    async handleAPITenants(_req, res) {
+        try {
+            const tenants = await supabaseService.request("GET", "tenants", {
+                query: "active=eq.true&order=name.asc",
+            });
+            this.sendJSON(res, 200, tenants || []);
+        }
+        catch (error) {
+            logger.error("Error getting tenants", error);
+            this.sendJSON(res, 500, { error: "Failed to get tenants" });
+        }
+    }
+    async handleAPICreateTenant(_req, res, body) {
+        try {
+            const data = JSON.parse(body || "{}");
+            const { name, slug, phone, address, specialty } = data;
+            if (!name || !slug) {
+                this.sendJSON(res, 400, { error: "name and slug are required" });
+                return;
+            }
+            const tenant = await supabaseService.request("POST", "tenants", {
+                body: {
+                    name,
+                    slug,
+                    phone: phone || null,
+                    address: address || null,
+                    specialty: specialty || null,
+                    active: true,
+                    agent_config: {
+                        enabled: true,
+                        personality: "friendly",
+                        useEmojis: true,
+                        maxBubbles: 2,
+                        delays: { base: 450, perChar: 18, cap: 1750 }
+                    },
+                    business_hours: {
+                        days: ["mon", "tue", "wed", "thu", "fri"],
+                        open: "09:00",
+                        close: "18:00"
+                    }
+                },
+            });
+            this.sendJSON(res, 201, tenant);
+        }
+        catch (error) {
+            logger.error("Error creating tenant", error);
+            this.sendJSON(res, 500, { error: "Failed to create tenant" });
+        }
+    }
+    async handleAPIUpdateTenant(req, res, body) {
+        try {
+            const url = new URL(req.url, `http://${req.headers.host}`);
+            const id = url.searchParams.get("id");
+            if (!id) {
+                this.sendJSON(res, 400, { error: "id is required" });
+                return;
+            }
+            const data = JSON.parse(body || "{}");
+            const tenant = await supabaseService.request("PATCH", "tenants", {
+                query: `id=eq.${id}`,
+                body: data,
+            });
+            this.sendJSON(res, 200, tenant);
+        }
+        catch (error) {
+            logger.error("Error updating tenant", error);
+            this.sendJSON(res, 500, { error: "Failed to update tenant" });
+        }
+    }
+    async handleAPITenantMetrics(req, res) {
+        try {
+            const url = new URL(req.url, `http://${req.headers.host}`);
+            const tenantId = url.searchParams.get("tenant_id");
+            // Buscar todos os tenants ou um específico
+            let tenantsQuery = "active=eq.true";
+            if (tenantId)
+                tenantsQuery += `&id=eq.${tenantId}`;
+            const tenants = await supabaseService.request("GET", "tenants", { query: tenantsQuery });
+            const metrics = await Promise.all((tenants || []).map(async (tenant) => {
+                // Contar conversas
+                const conversations = await supabaseService.request("GET", "conversations", {
+                    query: `tenant_id=eq.${tenant.id}&select=id`,
+                });
+                // Contar leads
+                const leads = await supabaseService.request("GET", "leads", {
+                    query: `tenant_id=eq.${tenant.id}&select=id,status`,
+                });
+                // Contar mensagens
+                const messages = await supabaseService.request("GET", "messages", {
+                    query: `tenant_id=eq.${tenant.id}&select=id,role,tokens_used`,
+                });
+                // Calcular métricas
+                const totalConversations = conversations?.length || 0;
+                const totalLeads = leads?.length || 0;
+                const qualifiedLeads = leads?.filter((l) => l.status === "qualified" || l.status === "won").length || 0;
+                const totalMessages = messages?.length || 0;
+                const assistantMessages = messages?.filter((m) => m.role === "assistant").length || 0;
+                const tokensUsed = messages?.reduce((sum, m) => sum + (m.tokens_used || 0), 0) || 0;
+                return {
+                    tenant_id: tenant.id,
+                    tenant_name: tenant.name,
+                    tenant_slug: tenant.slug,
+                    metrics: {
+                        conversations: totalConversations,
+                        leads: totalLeads,
+                        qualified_leads: qualifiedLeads,
+                        conversion_rate: totalLeads > 0 ? Math.round((qualifiedLeads / totalLeads) * 100) : 0,
+                        messages: totalMessages,
+                        assistant_messages: assistantMessages,
+                        tokens_used: tokensUsed,
+                        avg_messages_per_conversation: totalConversations > 0 ? Math.round(totalMessages / totalConversations) : 0,
+                    },
+                };
+            }));
+            this.sendJSON(res, 200, tenantId ? metrics[0] : metrics);
+        }
+        catch (error) {
+            logger.error("Error getting tenant metrics", error);
+            this.sendJSON(res, 500, { error: "Failed to get tenant metrics" });
+        }
+    }
+    // ========= Users Handlers =========
+    async handleAPIUsers(req, res) {
+        try {
+            const url = new URL(req.url, `http://${req.headers.host}`);
+            const tenantId = url.searchParams.get("tenant_id") || undefined;
+            const role = url.searchParams.get("role") || undefined;
+            let query = "select=*,tenant:tenants(id,name,slug)&order=name.asc";
+            if (tenantId)
+                query += `&tenant_id=eq.${tenantId}`;
+            if (role)
+                query += `&role=eq.${role}`;
+            const users = await supabaseService.request("GET", "user_profiles", { query });
+            this.sendJSON(res, 200, users || []);
+        }
+        catch (error) {
+            logger.error("Error getting users", error);
+            this.sendJSON(res, 500, { error: "Failed to get users" });
+        }
+    }
+    async handleAPICreateUser(req, res, body) {
+        try {
+            const data = JSON.parse(body || "{}");
+            const { email, name, role, tenant_id } = data;
+            if (!email || !name || !tenant_id) {
+                this.sendJSON(res, 400, { error: "email, name and tenant_id are required" });
+                return;
+            }
+            const user = await supabaseService.request("POST", "user_profiles", {
+                body: { email, name, role: role || "user", tenant_id },
+            });
+            this.sendJSON(res, 201, user);
+        }
+        catch (error) {
+            logger.error("Error creating user", error);
+            this.sendJSON(res, 500, { error: "Failed to create user" });
+        }
+    }
+    async handleAPIUpdateUser(req, res, body) {
+        try {
+            const url = new URL(req.url, `http://${req.headers.host}`);
+            const id = url.searchParams.get("id");
+            if (!id) {
+                this.sendJSON(res, 400, { error: "id is required" });
+                return;
+            }
+            const data = JSON.parse(body || "{}");
+            const user = await supabaseService.request("PATCH", "user_profiles", {
+                query: `id=eq.${id}`,
+                body,
+            });
+            this.sendJSON(res, 200, user);
+        }
+        catch (error) {
+            logger.error("Error updating user", error);
+            this.sendJSON(res, 500, { error: "Failed to update user" });
+        }
+    }
+    async handleAPIDeleteUser(req, res) {
+        try {
+            const url = new URL(req.url, `http://${req.headers.host}`);
+            const id = url.searchParams.get("id");
+            if (!id) {
+                this.sendJSON(res, 400, { error: "id is required" });
+                return;
+            }
+            await supabaseService.request("DELETE", "user_profiles", {
+                query: `id=eq.${id}`,
+            });
+            this.sendJSON(res, 204, null);
+        }
+        catch (error) {
+            logger.error("Error deleting user", error);
+            this.sendJSON(res, 500, { error: "Failed to delete user" });
         }
     }
     async handleAPILeads(req, res) {
@@ -170,12 +546,61 @@ export class WebhookServer {
             const url = new URL(req.url, `http://${req.headers.host}`);
             const limit = parseInt(url.searchParams.get("limit") || "50");
             const status = url.searchParams.get("status") || undefined;
-            const leads = await supabaseService.getLeads(status, limit);
+            const tenantId = url.searchParams.get("tenant_id") || undefined;
+            let leads;
+            if (tenantId) {
+                let query = `tenant_id=eq.${tenantId}&order=updated_at.desc&limit=${limit}`;
+                if (status)
+                    query += `&status=eq.${status}`;
+                leads = await supabaseService.request("GET", "leads", { query });
+            }
+            else {
+                leads = await supabaseService.getLeads(status, limit);
+            }
             this.sendJSON(res, 200, leads || []);
         }
         catch (error) {
-            logger.error("Error getting leads", error, "API");
+            logger.error("Error getting leads", error);
             this.sendJSON(res, 500, { error: "Failed to get leads" });
+        }
+    }
+    // ✅ Update lead (PATCH /api/leads?id=xxx)
+    async handleAPIUpdateLead(req, res, body) {
+        try {
+            const url = new URL(req.url, `http://${req.headers.host}`);
+            const leadId = url.searchParams.get("id");
+            if (!leadId) {
+                this.sendJSON(res, 400, { error: "id parameter is required" });
+                return;
+            }
+            const updates = JSON.parse(body || "{}");
+            if (Object.keys(updates).length === 0) {
+                this.sendJSON(res, 400, { error: "No fields to update" });
+                return;
+            }
+            // Campos permitidos para update
+            const allowedFields = ["status", "stage", "health_score", "conversion_probability", "urgency_level", "tags", "name"];
+            const sanitized = {};
+            for (const key of allowedFields) {
+                if (updates[key] !== undefined) {
+                    sanitized[key] = updates[key];
+                }
+            }
+            if (Object.keys(sanitized).length === 0) {
+                this.sendJSON(res, 400, { error: "No valid fields to update" });
+                return;
+            }
+            sanitized.updated_at = new Date().toISOString();
+            await supabaseService.request("PATCH", "leads", {
+                query: `id=eq.${leadId}`,
+                body: sanitized
+            });
+            logger.info(`Lead ${leadId} updated`, sanitized, "API");
+            this.sendJSON(res, 200, { success: true, updated: sanitized });
+        }
+        catch (error) {
+            logger.error("Error updating lead", error);
+            this.sendJSON(res, 500, { error: "Failed to update lead" });
         }
     }
     async handleAPIMessages(req, res) {
@@ -191,48 +616,48 @@ export class WebhookServer {
             this.sendJSON(res, 200, messages || []);
         }
         catch (error) {
-            logger.error("Error getting messages", error, "API");
+            logger.error("Error getting messages", error);
             this.sendJSON(res, 500, { error: "Failed to get messages" });
         }
     }
-    async handleAPIStats(req, res) {
+    async handleAPIStats(_req, res) {
         try {
             const stats = await supabaseService.getDashboardStats();
             this.sendJSON(res, 200, stats);
         }
         catch (error) {
-            logger.error("Error getting stats", error, "API");
+            logger.error("Error getting stats", error);
             this.sendJSON(res, 500, { error: "Failed to get stats" });
         }
     }
     // ============ Emoção ============
-    async handleAPIDashboardMetrics(req, res) {
+    async handleAPIDashboardMetrics(_req, res) {
         try {
             const metrics = await emotionService.getDashboardMetrics();
             this.sendJSON(res, 200, metrics);
         }
         catch (error) {
-            logger.error("Error getting dashboard metrics", error, "API");
+            logger.error("Error getting dashboard metrics", error);
             this.sendJSON(res, 500, { error: "Failed to get dashboard metrics" });
         }
     }
-    async handleAPISentimentMatrix(req, res) {
+    async handleAPISentimentMatrix(_req, res) {
         try {
             const matrix = await emotionService.getSentimentMatrix();
             this.sendJSON(res, 200, matrix);
         }
         catch (error) {
-            logger.error("Error getting sentiment matrix", error, "API");
+            logger.error("Error getting sentiment matrix", error);
             this.sendJSON(res, 500, { error: "Failed to get sentiment matrix" });
         }
     }
-    async handleAPIEmotionalFunnel(req, res) {
+    async handleAPIEmotionalFunnel(_req, res) {
         try {
             const funnel = await emotionService.getEmotionalFunnel();
             this.sendJSON(res, 200, funnel);
         }
         catch (error) {
-            logger.error("Error getting emotional funnel", error, "API");
+            logger.error("Error getting emotional funnel", error);
             this.sendJSON(res, 500, { error: "Failed to get emotional funnel" });
         }
     }
@@ -252,7 +677,7 @@ export class WebhookServer {
             this.sendJSON(res, 200, health);
         }
         catch (error) {
-            logger.error("Error getting lead health", error, "API");
+            logger.error("Error getting lead health", error);
             this.sendJSON(res, 500, { error: "Failed to get lead health" });
         }
     }
@@ -267,7 +692,7 @@ export class WebhookServer {
             this.sendJSON(res, 200, result);
         }
         catch (error) {
-            logger.error("Error getting stalled conversations", error, "API");
+            logger.error("Error getting stalled conversations", error);
             this.sendJSON(res, 500, { error: "Failed to get stalled conversations" });
         }
     }
@@ -279,11 +704,11 @@ export class WebhookServer {
             this.sendJSON(res, 200, summary);
         }
         catch (error) {
-            logger.error("Error getting analysis summary", error, "API");
+            logger.error("Error getting analysis summary", error);
             this.sendJSON(res, 500, { error: "Failed to get analysis summary" });
         }
     }
-    async handleAPIAnalysisRun(req, res, body) {
+    async handleAPIAnalysisRun(_req, res, body) {
         try {
             const payload = JSON.parse(body || "{}");
             if (!payload.conversation_id) {
@@ -298,11 +723,11 @@ export class WebhookServer {
             this.sendJSON(res, 200, result);
         }
         catch (error) {
-            logger.error("Error running analysis", error, "API");
+            logger.error("Error running analysis", error);
             this.sendJSON(res, 500, { error: "Failed to run analysis" });
         }
     }
-    async handleAPIAnalysisApproveSend(req, res, body) {
+    async handleAPIAnalysisApproveSend(_req, res, body) {
         try {
             const payload = JSON.parse(body || "{}");
             if (!payload.conversation_id) {
@@ -317,7 +742,7 @@ export class WebhookServer {
             this.sendJSON(res, 200, result);
         }
         catch (error) {
-            logger.error("Error approving/sending followup", error, "API");
+            logger.error("Error approving/sending followup", error);
             this.sendJSON(res, 500, { error: error?.message || "Failed to approve/send followup" });
         }
     }
@@ -337,41 +762,113 @@ export class WebhookServer {
             }
         }
         catch (error) {
-            logger.error("Error getting settings", error, "API");
+            logger.error("Error getting settings", error);
             this.sendJSON(res, 500, { error: "Failed to get settings" });
         }
     }
-    async handleAPISaveSettings(req, res, body) {
+    async handleAPISaveSettings(_req, res, body) {
         try {
             const { key, value } = JSON.parse(body);
-            if (!key || !value) {
-                this.sendJSON(res, 400, { error: "Key and value required" });
+            if (!key) {
+                this.sendJSON(res, 400, { error: "Key is required" });
                 return;
             }
-            const existing = await supabaseService.request("GET", "settings", {
-                query: `key=eq.${key}`,
-            });
-            if (existing && existing.length > 0) {
-                await supabaseService.request("PATCH", "settings", {
-                    query: `key=eq.${key}`,
-                    body: { value, updated_at: new Date().toISOString() },
-                });
-            }
-            else {
-                await supabaseService.request("POST", "settings", {
-                    body: {
-                        key,
-                        value,
-                        created_at: new Date().toISOString(),
-                        updated_at: new Date().toISOString(),
-                    },
-                });
+            const ok = await upsertSetting(key, value);
+            if (!ok) {
+                this.sendJSON(res, 500, { error: "Failed to save setting" });
+                return;
             }
             this.sendJSON(res, 200, { success: true, key });
         }
         catch (error) {
-            logger.error("Error saving settings", error, "API");
+            logger.error("Error saving settings", error);
             this.sendJSON(res, 500, { error: "Failed to save settings" });
+        }
+    }
+    // ============ ✅ Agent ON/OFF (global) ============
+    async handleAgentStatus(_req, res) {
+        try {
+            const st = await getAgentEnabled();
+            this.sendJSON(res, 200, { ok: true, enabled: st.enabled, updated_at: st.updated_at });
+        }
+        catch (error) {
+            logger.error("Error getting agent status", error);
+            this.sendJSON(res, 500, { ok: false, error: "Failed to get agent status" });
+        }
+    }
+    async handleAgentSetStatus(_req, res, body) {
+        try {
+            const payload = JSON.parse(body || "{}");
+            if (typeof payload.enabled !== "boolean") {
+                this.sendJSON(res, 400, { ok: false, error: "enabled must be boolean" });
+                return;
+            }
+            const ok = await setAgentEnabled(payload.enabled);
+            if (!ok) {
+                this.sendJSON(res, 500, { ok: false, error: "Failed to save agent status" });
+                return;
+            }
+            const st = await getAgentEnabled();
+            this.sendJSON(res, 200, { ok: true, enabled: st.enabled, updated_at: st.updated_at });
+        }
+        catch (error) {
+            logger.error("Error setting agent status", error);
+            this.sendJSON(res, 500, { ok: false, error: error?.message || "Failed to set agent status" });
+        }
+    }
+    // ============ Calendar APIs ============
+    async handleAPICalendarAvailability(req, res) {
+        try {
+            const url = new URL(req.url, `http://${req.headers.host}`);
+            const days = url.searchParams.get("days") ? Number(url.searchParams.get("days")) : 2;
+            const duration = url.searchParams.get("duration") ? Number(url.searchParams.get("duration")) : 30;
+            const limit = url.searchParams.get("limit") ? Number(url.searchParams.get("limit")) : 3;
+            const timezone = url.searchParams.get("timezone") || "America/Sao_Paulo";
+            const data = await this.calendarService.getAvailability({
+                days,
+                duration,
+                limit,
+                timezone,
+                calendarId: "primary",
+            });
+            this.sendJSON(res, 200, data);
+        }
+        catch (error) {
+            logger.error("Error getting calendar availability", error);
+            this.sendJSON(res, 500, { error: error?.message || "Failed to get availability" });
+        }
+    }
+    async handleAPICalendarSchedule(_req, res, body) {
+        try {
+            const payload = JSON.parse(body || "{}");
+            const leadName = String(payload.leadName || payload.lead_name || "").trim();
+            const leadPhone = String(payload.leadPhone || payload.lead_phone || "").trim();
+            const leadEmail = payload.leadEmail ? String(payload.leadEmail).trim() : undefined;
+            const start = String(payload.start || "").trim();
+            const duration = payload.duration ? Number(payload.duration) : 30;
+            const timezone = payload.timezone ? String(payload.timezone) : "America/Sao_Paulo";
+            const conversationContext = payload.conversationContext ? String(payload.conversationContext) : "";
+            const owner = payload.owner ? String(payload.owner) : "Douglas";
+            if (!leadPhone || !start) {
+                this.sendJSON(res, 400, { error: "Campos obrigatórios: leadPhone, start" });
+                return;
+            }
+            const event = await this.calendarService.createEvent({
+                leadName: leadName || leadPhone,
+                leadPhone,
+                leadEmail,
+                start,
+                duration,
+                timezone,
+                conversationContext,
+                owner,
+                calendarId: "primary",
+            });
+            this.sendJSON(res, 200, event);
+        }
+        catch (error) {
+            logger.error("Error scheduling calendar event", error);
+            this.sendJSON(res, 500, { error: error?.message || "Failed to schedule event" });
         }
     }
     // ============ Knowledge Base ============
@@ -386,11 +883,11 @@ export class WebhookServer {
             this.sendJSON(res, 200, result || []);
         }
         catch (error) {
-            logger.error("Error getting knowledge", error, "API");
+            logger.error("Error getting knowledge", error);
             this.sendJSON(res, 500, { error: "Failed to get knowledge" });
         }
     }
-    async handleAPISaveKnowledge(req, res, body) {
+    async handleAPISaveKnowledge(_req, res, body) {
         try {
             const data = JSON.parse(body);
             if (!data.question || !data.answer) {
@@ -412,11 +909,11 @@ export class WebhookServer {
             this.sendJSON(res, 200, { success: true });
         }
         catch (error) {
-            logger.error("Error saving knowledge", error, "API");
+            logger.error("Error saving knowledge", error);
             this.sendJSON(res, 500, { error: "Failed to save knowledge" });
         }
     }
-    async handleAPIDeleteKnowledge(req, res, body) {
+    async handleAPIDeleteKnowledge(_req, res, body) {
         try {
             const { id } = JSON.parse(body);
             if (!id) {
@@ -429,62 +926,138 @@ export class WebhookServer {
             this.sendJSON(res, 200, { success: true });
         }
         catch (error) {
-            logger.error("Error deleting knowledge", error, "API");
+            logger.error("Error deleting knowledge", error);
             this.sendJSON(res, 500, { error: "Failed to delete knowledge" });
         }
     }
-    // ============ ✅ CHAT DEMO (Mockup Landing) ============
-    async handleAPIChat(req, res, body) {
+    // ============ ✅ Agent Studio APIs ============
+    async handleAgentGetHumanizerConfig(_req, res) {
+        try {
+            const row = await getSetting(SETTINGS_KEYS.humanizerConfig);
+            if (row?.value) {
+                this.sendJSON(res, 200, {
+                    ok: true,
+                    key: SETTINGS_KEYS.humanizerConfig,
+                    value: row.value,
+                    updated_at: row.updated_at || null,
+                });
+                return;
+            }
+            const fallback = getDefaultHumanizerConfig();
+            this.sendJSON(res, 200, {
+                ok: true,
+                key: SETTINGS_KEYS.humanizerConfig,
+                value: fallback,
+                updated_at: null,
+                fallback: true,
+            });
+        }
+        catch (err) {
+            logger.error("Error getting humanizer config", err);
+            this.sendJSON(res, 500, { ok: false, error: "Failed to load humanizer config" });
+        }
+    }
+    async handleAgentSaveHumanizerConfig(_req, res, body) {
+        try {
+            const payload = JSON.parse(body || "{}");
+            if (!payload || typeof payload !== "object") {
+                this.sendJSON(res, 400, { ok: false, error: "Invalid payload" });
+                return;
+            }
+            if (!payload.humanizer || typeof payload.humanizer !== "object") {
+                this.sendJSON(res, 400, { ok: false, error: "Payload must include { humanizer: {...} }" });
+                return;
+            }
+            payload.updated_at = new Date().toISOString();
+            const ok = await upsertSetting(SETTINGS_KEYS.humanizerConfig, payload);
+            if (!ok) {
+                this.sendJSON(res, 500, { ok: false, error: "Failed to save config in Supabase" });
+                return;
+            }
+            try {
+                responseAgent.config = responseAgent.config || {};
+                responseAgent.config.humanizer = payload.humanizer;
+            }
+            catch { }
+            this.sendJSON(res, 200, { ok: true });
+        }
+        catch (err) {
+            logger.error("Error saving humanizer config", err);
+            this.sendJSON(res, 500, { ok: false, error: err?.message || "Failed to save humanizer config" });
+        }
+    }
+    async handleAgentSimulate(_req, res, body) {
         try {
             const payload = JSON.parse(body || "{}");
             const message = String(payload.message || "").trim();
-            const sessionId = String(payload.session_id || "").trim() || "anon";
+            const stage = String(payload.stage || "cold").trim();
+            const emotion = String(payload.emotion || "neutral").trim();
+            const intention = String(payload.intention || "outros").trim();
             if (!message) {
-                this.sendJSON(res, 400, { error: "message is required" });
+                this.sendJSON(res, 400, { ok: false, error: "message is required" });
                 return;
             }
-            // Identidade fake por sessão (não mistura com WA real)
-            const phone = `web_${sessionId}`;
-            const chatId = `${phone}@web`;
-            // Cria/recupera conversa no Supabase
-            const conversation = await supabaseService.getOrCreateConversation(phone, chatId);
-            if (!conversation) {
-                this.sendJSON(res, 500, { error: "Failed to create conversation" });
+            if (typeof responseAgent?.createResponsePlan !== "function") {
+                this.sendJSON(res, 500, { ok: false, error: "responseAgent.createResponsePlan not found" });
                 return;
             }
-            // Salva mensagem do usuário
-            await supabaseService.addMessage(conversation.id, {
-                role: "user",
-                content: message,
-                // ✅ removido: source (não existe no tipo MessageMetadata)
-                metadata: {},
-                timestamp: new Date(),
+            const plan = responseAgent.createResponsePlan({
+                aiText: message,
+                intention,
+                emotion,
+                stage,
+                context: { profile: {}, calendar: {} },
             });
-            // Processa com agente
-            const result = await responseAgent.processMessage(phone, chatId, message);
-            // Salva resposta
-            await supabaseService.addMessage(conversation.id, {
-                role: "assistant",
-                content: result.response,
-                // ✅ removido: source (não existe no tipo MessageMetadata)
-                metadata: {
-                    emotion: result.emotion,
-                    intention: result.intention,
-                    shouldEscalate: result.shouldEscalate,
-                },
-                timestamp: new Date(),
-            });
-            this.sendJSON(res, 200, {
-                ok: true,
-                reply: result.response,
-                emotion: result.emotion,
-                intention: result.intention,
-                shouldEscalate: result.shouldEscalate,
-            });
+            this.sendJSON(res, 200, { ok: true, plan });
+        }
+        catch (err) {
+            logger.error("Error simulating agent plan", err);
+            this.sendJSON(res, 500, { ok: false, error: err?.message || "Failed to simulate" });
+        }
+    }
+    // ============ ✅ CHAT DEMO (Landing) ============
+    async handleAPIChat(_req, res, body) {
+        try {
+            const payload = JSON.parse(body || "{}");
+            const result = await webhookService.handleChat(payload);
+            this.sendJSON(res, 200, result);
         }
         catch (error) {
-            logger.error("Error in /api/chat", error, "API");
-            this.sendJSON(res, 500, { error: "Failed to process chat" });
+            logger.error("Error in /api/chat", error);
+            this.sendJSON(res, 500, { ok: false, error: "Failed to process chat" });
+        }
+    }
+    // ============ ✅ HANDOFF endpoints ============
+    async handlePauseConversation(_req, res, body) {
+        try {
+            const payload = JSON.parse(body || "{}");
+            const chatId = String(payload.chatId || payload.chat_id || "").trim();
+            const ttlMinutes = payload.ttlMinutes !== undefined ? Number(payload.ttlMinutes) : HANDOFF_TTL_MINUTES;
+            const by = payload.by ? String(payload.by) : "manual";
+            if (!chatId) {
+                this.sendJSON(res, 400, { ok: false, error: "chatId is required" });
+                return;
+            }
+            pauseChat(chatId, "manual", by, ttlMinutes);
+            this.sendJSON(res, 200, { ok: true, chatId, paused: true });
+        }
+        catch (e) {
+            this.sendJSON(res, 500, { ok: false, error: e?.message || "Failed to pause" });
+        }
+    }
+    async handleResumeConversation(_req, res, body) {
+        try {
+            const payload = JSON.parse(body || "{}");
+            const chatId = String(payload.chatId || payload.chat_id || "").trim();
+            if (!chatId) {
+                this.sendJSON(res, 400, { ok: false, error: "chatId is required" });
+                return;
+            }
+            resumeChat(chatId);
+            this.sendJSON(res, 200, { ok: true, chatId, paused: false });
+        }
+        catch (e) {
+            this.sendJSON(res, 500, { ok: false, error: e?.message || "Failed to resume" });
         }
     }
     // ============ Webhook WAHA ============
@@ -494,20 +1067,37 @@ export class WebhookServer {
             logger.webhook("WAHA webhook received", {
                 event: payload.event,
                 from: payload.payload?.from,
+                fromMe: payload.payload?.fromMe ?? null,
             });
-            if (payload.event !== "message") {
-                this.sendJSON(res, 200, { status: "ignored", reason: "not a message event" });
-                return;
-            }
             const message = payload.payload;
-            if (this.config.ignoreSelf && message.fromMe) {
-                this.sendJSON(res, 200, { status: "ignored", reason: "self message" });
+            // ✅ If it is a message from our own account, it can be HUMAN or BOT.
+            // We use message id to differentiate.
+            if (message && message.fromMe === true) {
+                const msgId = String(message?.id?._serialized || message?.id || "").trim();
+                const chatId = String(message?.to || message?.from || "").trim() || String(message?.chatId || "").trim();
+                // If it's NOT a message that the bot sent, then it's human intervention → pause
+                if (chatId && !isBotSentId(msgId, chatId)) {
+                    pauseChat(chatId, "human_intervention", "human", HANDOFF_TTL_MINUTES);
+                }
+                // respond ok
+                this.sendJSON(res, 200, { status: "ok", reason: "fromMe processed" });
                 return;
             }
-            if (this.config.ignoreGroups && message.from.endsWith("@g.us")) {
+            // ✅ Process only real inbound messages
+            if (payload.event !== "message") {
+                this.sendJSON(res, 200, { status: "ignored", reason: "not message event" });
+                return;
+            }
+            if (!message) {
+                this.sendJSON(res, 200, { status: "ignored", reason: "no payload" });
+                return;
+            }
+            // ignore groups
+            if (this.config.ignoreGroups && String(message.from || "").endsWith("@g.us")) {
                 this.sendJSON(res, 200, { status: "ignored", reason: "group message" });
                 return;
             }
+            // blocked/allowed checks
             if (this.isBlocked(message.from)) {
                 this.sendJSON(res, 200, { status: "ignored", reason: "blocked number" });
                 return;
@@ -516,7 +1106,8 @@ export class WebhookServer {
                 this.sendJSON(res, 200, { status: "ignored", reason: "not in allowed list" });
                 return;
             }
-            const messageKey = `${message.from}-${message.id}`;
+            const msgId = String(message?.id?._serialized || message?.id || "");
+            const messageKey = msgId ? msgId : `${message.from}-${message?.timestamp || Date.now()}`;
             if (this.processingQueue.has(messageKey)) {
                 this.sendJSON(res, 200, { status: "ignored", reason: "already processing" });
                 return;
@@ -528,11 +1119,11 @@ export class WebhookServer {
             });
         }
         catch (error) {
-            logger.error("Error handling webhook", error, "WEBHOOK");
+            logger.error("Error handling webhook", error);
             this.sendJSON(res, 500, { error: "Internal server error" });
         }
     }
-    async handleHealth(req, res) {
+    async handleHealth(_req, res) {
         this.sendJSON(res, 200, {
             status: "ok",
             timestamp: new Date().toISOString(),
@@ -540,7 +1131,7 @@ export class WebhookServer {
             memory: process.memoryUsage(),
         });
     }
-    async handleStats(req, res) {
+    async handleStats(_req, res) {
         try {
             const dbStats = supabaseService.getStats();
             this.sendJSON(res, 200, {
@@ -549,6 +1140,10 @@ export class WebhookServer {
                     autoReply: this.config.autoReply,
                     typingDelay: this.config.typingDelay,
                     processingQueue: this.processingQueue.size,
+                    handoff: {
+                        pausedChats: PAUSED_CHATS.size,
+                        ttlMinutes: HANDOFF_TTL_MINUTES,
+                    },
                 },
             });
         }
@@ -556,21 +1151,22 @@ export class WebhookServer {
             this.sendJSON(res, 500, { error: "Failed to get stats" });
         }
     }
-    async handleSendMessage(req, res, body) {
+    async handleSendMessage(_req, res, body) {
         try {
             const { phone, message } = JSON.parse(body);
             if (!phone || !message) {
                 this.sendJSON(res, 400, { error: "phone and message are required" });
                 return;
             }
+            const chatId = String(phone).includes("@c.us") || String(phone).includes("@lid") ? String(phone) : `${String(phone)}@c.us`;
             const result = await wahaService.sendMessage({
-                chatId: phone,
-                text: message,
+                chatId,
+                text: String(message),
             });
             this.sendJSON(res, 200, { success: true, result });
         }
         catch (error) {
-            logger.error("Error sending message", error, "WEBHOOK");
+            logger.error("Error sending message", error);
             this.sendJSON(res, 500, { error: "Failed to send message" });
         }
     }
@@ -593,37 +1189,151 @@ export class WebhookServer {
             this.sendJSON(res, 500, { error: "Failed to get conversation" });
         }
     }
+    // ============================================
+    // ✅ PROCESSAMENTO PRINCIPAL
+    // ============================================
+    cleanupProcessed() {
+        const now = Date.now();
+        for (const [k, ts] of this.processedMessageIds.entries()) {
+            if (now - ts > this.processedTTLms)
+                this.processedMessageIds.delete(k);
+        }
+    }
+    stripSuffix(id) {
+        return String(id || "")
+            .replace(/@(c\.us|g\.us|lid)$/g, "")
+            .trim();
+    }
     async processMessage(message) {
-        const phone = message.from.replace("@c.us", "");
-        const chatId = message.from;
-        const text = message.body;
+        const from = String(message.from || "");
+        const chatId = String(message.from || ""); // keep @lid if present!
+        const phone = this.stripSuffix(from);
+        const text = String(message.body || "");
+        // ✅ Global ON/OFF: se agente estiver OFF, ignora IA e não envia mensagens
+        try {
+            const st = await getAgentEnabled();
+            if (!st.enabled) {
+                logger.conversation("Agent disabled globally, skipping reply", {
+                    phone,
+                    chatId,
+                    reason: "AGENT_DISABLED",
+                });
+                return;
+            }
+        }
+        catch (e) {
+            // Fail-safe: se não conseguir ler status, não responde
+            logger.warn("Agent status check failed (fail-safe OFF), skipping reply", {
+                phone,
+                chatId,
+                reason: "AGENT_DISABLED",
+                error: String(e?.message || e),
+            });
+            return;
+        }
+        // ✅ if paused, do not answer
+        if (isChatPaused(chatId)) {
+            // ✅ FIX: logger.conversation expected 1-2 args; put HANDOFF tag in meta
+            logger.conversation("Conversation paused by human handoff, skipping reply", { chatId, phone, tag: "HANDOFF" });
+            return;
+        }
+        // ✅ Anti-duplicado por message.id
+        const msgId = String(message?.id?._serialized || message?.id || "");
+        if (msgId) {
+            this.cleanupProcessed();
+            if (this.processedMessageIds.has(msgId)) {
+                logger.conversation("Duplicate message ignored (by id)", { phone, msgId });
+                return;
+            }
+            this.processedMessageIds.set(msgId, Date.now());
+        }
+        // ✅ Detectar cliente pelo telefone/instance
+        const clientId = clientService.detectClient(phone);
+        const clientConfig = clientId ? clientService.getClientConfig(clientId) : null;
         logger.conversation("Processing message", {
             phone,
+            chatId,
             text: text.substring(0, 50),
+            clientId: clientId || "unknown",
+            clientName: clientConfig?.nome_exibicao || "N/A",
         });
         try {
-            if (this.config.typingDelay) {
-                await wahaService.sendTyping(chatId, this.config.typingDelayMs);
-                await this.sleep(this.config.typingDelayMs);
-            }
-            if (this.config.autoReply) {
-                const result = await responseAgent.processMessage(phone, chatId, text);
-                await wahaService.sendMessage({
-                    chatId,
-                    text: result.response,
-                });
-                logger.conversation("Response sent", {
-                    phone,
-                    emotion: result.emotion,
-                    shouldEscalate: result.shouldEscalate,
-                });
-                if (result.shouldEscalate) {
-                    logger.warn("Escalation needed", { phone, reason: result.escalationReason }, "WEBHOOK");
+            if (!this.config.autoReply)
+                return;
+            const result = await responseAgent.processMessage(phone, chatId, text, {
+                channel: "whatsapp",
+                ui_mode: "real",
+                meta: {},
+                clientId: clientId || undefined,
+            });
+            const finalText = String(result?.response || "").trim();
+            if (!finalText)
+                return;
+            const stage = String(result?.stage || "warm");
+            const emotion = String(result?.emotion || "neutral");
+            const intention = String(result?.intention || "outros");
+            let plan = result?.responsePlan || null;
+            if (!plan) {
+                try {
+                    if (typeof responseAgent?.createResponsePlan === "function") {
+                        plan = responseAgent.createResponsePlan({
+                            aiText: finalText,
+                            intention,
+                            emotion,
+                            stage,
+                            context: { profile: {}, calendar: {} },
+                        });
+                    }
                 }
+                catch (e) {
+                    logger.warn("Failed generating plan (ignored)", { phone, e });
+                }
+            }
+            const planItems = plan?.items;
+            logger.info("HUMANIZER DEBUG", {
+                phone,
+                chatId,
+                hasPlan: !!plan,
+                itemsLen: Array.isArray(planItems) ? planItems.length : 0,
+                bubbles: plan?.bubbles?.length ?? null,
+                stage,
+                emotion,
+                intention,
+            });
+            // ✅ If pause happens in between, stop
+            if (isChatPaused(chatId)) {
+                // ✅ FIX: logger.conversation expected 1-2 args; put HANDOFF tag in meta
+                logger.conversation("Conversation paused mid-flight, skipping send", { chatId, phone, tag: "HANDOFF" });
+                return;
+            }
+            if (Array.isArray(planItems) && planItems.length > 0 && typeof wahaService?.sendPlanV3 === "function") {
+                logger.conversation("Sending humanized plan", {
+                    phone,
+                    chatId,
+                    items: planItems.length,
+                    bubbles: plan?.bubbles?.length ?? null,
+                });
+                await wahaService.sendPlanV3(chatId, planItems);
+            }
+            else {
+                await wahaService.sendMessage({ chatId, text: finalText });
+            }
+            logger.conversation("Response sent", {
+                phone,
+                chatId,
+                emotion,
+                shouldEscalate: result.shouldEscalate,
+                usedPlan: !!planItems?.length,
+            });
+            if (result.shouldEscalate) {
+                logger.warn("Escalation needed", { phone, reason: result.escalationReason });
             }
         }
         catch (error) {
-            logger.error("Error processing message", error, "WEBHOOK");
+            logger.error("Error processing message", error);
+            // if paused, don't send fallback either
+            if (isChatPaused(chatId))
+                return;
             try {
                 await wahaService.sendMessage({
                     chatId,
@@ -631,27 +1341,27 @@ export class WebhookServer {
                 });
             }
             catch (e) {
-                logger.error("Failed to send error message", e, "WEBHOOK");
+                logger.error("Failed to send error message", e);
             }
         }
     }
     isBlocked(from) {
         if (!this.config.blockedNumbers || this.config.blockedNumbers.length === 0)
             return false;
-        const phone = from.replace("@c.us", "").replace(/\D/g, "");
-        return this.config.blockedNumbers.some((blocked) => phone.includes(blocked.replace(/\D/g, "")));
+        const phone = this.stripSuffix(String(from || "")).replace(/\D/g, "");
+        return this.config.blockedNumbers.some((blocked) => phone.includes(String(blocked).replace(/\D/g, "")));
     }
     isAllowed(from) {
         if (!this.config.allowedNumbers || this.config.allowedNumbers.length === 0)
             return true;
-        const phone = from.replace("@c.us", "").replace(/\D/g, "");
-        return this.config.allowedNumbers.some((allowed) => phone.includes(allowed.replace(/\D/g, "")));
+        const phone = this.stripSuffix(String(from || "")).replace(/\D/g, "");
+        return this.config.allowedNumbers.some((allowed) => phone.includes(String(allowed).replace(/\D/g, "")));
     }
     // ============ Server Management ============
     async start() {
         await supabaseService.initialize();
         this.server = http.createServer(async (req, res) => {
-            // CORS (ok p/ landing)
+            // CORS
             res.setHeader("Access-Control-Allow-Origin", "*");
             res.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
             res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
@@ -687,7 +1397,7 @@ export class WebhookServer {
                         await handler(req, res, body);
                     }
                     catch (error) {
-                        logger.error("Route handler error", error, "WEBHOOK");
+                        logger.error("Route handler error", error);
                         this.sendJSON(res, 500, { error: "Internal server error" });
                     }
                 });
@@ -702,14 +1412,16 @@ export class WebhookServer {
         });
         return new Promise((resolve, reject) => {
             this.server.listen(this.config.port, this.config.host, () => {
-                logger.info(`Webhook server running on http://${this.config.host}:${this.config.port}`, undefined, "WEBHOOK");
-                logger.info("Available endpoints:", undefined, "WEBHOOK");
-                logger.info("  GET  /              - Dashboard", undefined, "WEBHOOK");
-                logger.info("  POST /webhook/waha  - WAHA webhook", undefined, "WEBHOOK");
-                logger.info("  GET  /health        - Health check", undefined, "WEBHOOK");
-                logger.info("  GET  /stats         - Statistics", undefined, "WEBHOOK");
-                logger.info("  POST /send          - Send message", undefined, "WEBHOOK");
-                logger.info("  POST /api/chat      - Chat demo endpoint", undefined, "WEBHOOK");
+                logger.info(`Webhook server running on http://${this.config.host}:${this.config.port}`, undefined);
+                logger.info("Available endpoints:", undefined);
+                logger.info("  GET  /              - Dashboard", undefined);
+                logger.info("  POST /webhook/waha  - WAHA webhook", undefined);
+                logger.info("  GET  /health        - Health check", undefined);
+                logger.info("  GET  /stats         - Statistics", undefined);
+                logger.info("  POST /send          - Send message", undefined);
+                logger.info("  POST /api/chat      - Chat demo endpoint (Landing)", undefined);
+                logger.info("  POST /api/conversations/pause  - Pause conversation", undefined);
+                logger.info("  POST /api/conversations/resume - Resume conversation", undefined);
                 resolve();
             });
             this.server.on("error", reject);
@@ -720,7 +1432,7 @@ export class WebhookServer {
             if (!this.server)
                 return resolve();
             this.server.close(() => {
-                logger.info("Webhook server stopped", undefined, "WEBHOOK");
+                logger.info("Webhook server stopped", undefined);
                 supabaseService.close();
                 resolve();
             });
@@ -730,12 +1442,9 @@ export class WebhookServer {
         res.writeHead(status, { "Content-Type": "application/json" });
         res.end(JSON.stringify(data));
     }
-    sleep(ms) {
-        return new Promise((resolve) => setTimeout(resolve, ms));
-    }
     updateConfig(updates) {
         this.config = { ...this.config, ...updates };
-        logger.info("Webhook config updated", updates, "WEBHOOK");
+        logger.info("Webhook config updated", updates);
     }
     getConfig() {
         return { ...this.config };
@@ -757,4 +1466,3 @@ if (isMainModule) {
         process.exit(0);
     });
 }
-//# sourceMappingURL=webhook.server.js.map

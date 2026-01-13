@@ -18,8 +18,9 @@
 import { logger } from "../utils/logger.js";
 import { aiService } from "./ai.service.js";
 import { supabaseService } from "./supabase.service.js";
-import { emotionService } from "./emotion.service.js";
+import { emotionService, detectEmotion } from "./emotion.service.js";
 import { calendarOrchestrator } from "./calendar/calendar.orchestrator.js";
+import { clientService } from "./client.service.js";
 
 // ============================================
 // CACHE DO PROMPT (recarrega a cada 5 minutos)
@@ -161,13 +162,13 @@ type HumanizerConfig = {
 type AgentHumanizerPayload = { humanizer?: Partial<HumanizerConfig> };
 
 const DEFAULT_HUMANIZER_CONFIG: HumanizerConfig = {
-  // ✅ bem mais natural / solto
-  maxBubbles: 5,
-  maxSentencesPerBubble: 4,
+  // ✅ Liberdade total - IA decide quantas bolhas
+  maxBubbles: 8,
+  maxSentencesPerBubble: 5,
   maxEmojiPerBubble: 3,
 
-  bubbleCharSoftLimit: 220,
-  bubbleCharHardLimit: 420,
+  bubbleCharSoftLimit: 280,
+  bubbleCharHardLimit: 500,
 
   delay: {
     base: 420,
@@ -181,13 +182,13 @@ const DEFAULT_HUMANIZER_CONFIG: HumanizerConfig = {
   },
 
   stageBehavior: {
-    cold: { maxBubbles: 4, requireQuestion: false, ctaLevel: "soft" },
-    warm: { maxBubbles: 5, requireQuestion: false, ctaLevel: "medium" },
-    hot: { maxBubbles: 5, requireQuestion: false, ctaLevel: "hard" },
+    cold: { maxBubbles: 6, requireQuestion: false, ctaLevel: "soft" },
+    warm: { maxBubbles: 8, requireQuestion: false, ctaLevel: "medium" },
+    hot: { maxBubbles: 8, requireQuestion: false, ctaLevel: "hard" },
   },
 
-  saveChunksToDB: true,
-  saveTypingChunks: true,
+  saveChunksToDB: false,  // ✅ Desativado (reduz I/O)
+  saveTypingChunks: false,
 
   intentModes: {
     primeiro_contato: {
@@ -388,50 +389,8 @@ async function safeUpdateConversationContext(conversationId: string, nextContext
 }
 
 // ============================================
-// DETECÇÃO DE EMOÇÕES (HEURÍSTICO)
+// DETECÇÃO DE EMOÇÕES - Importado de emotion.service.ts
 // ============================================
-const EMOTION_PATTERNS = {
-  skeptical: {
-    pattern: /duvido|será|não acredito|mentira|enganação|furada|falso|golpe|spam|bot|robô/i,
-    style: "Validar preocupação, ser transparente, oferecer exemplo real",
-  },
-  anxious: {
-    pattern: /urgente|rápido|agora|hoje|já|pressa|correndo|preciso muito|desesperado/i,
-    style: "Transmitir calma, dizer o próximo passo e resolver",
-  },
-  frustrated: {
-    pattern: /desisto|cansado|nada funciona|difícil|complicado|chato|irritado|problema|não aguento/i,
-    style: "Empatia genuína, reconhecer a dor, solução concreta",
-  },
-  excited: {
-    pattern: /quero|vamos|ótimo|perfeito|maravilha|top|bora|show|incrível|massa|demais/i,
-    style: "Manter energia e acelerar processo",
-  },
-  price_sensitive: {
-    pattern: /caro|valor|preço|quanto custa|custo|pagar|dinheiro|grana|investimento|orçamento/i,
-    style: "Focar em valor/ROI, sem passar preço por mensagem, pedir contexto",
-  },
-  ready: {
-    pattern: /agendar|marcar|quando|horário|dia|disponível|vamos fazer|fechar|contratar/i,
-    style: "Ir direto ao agendamento, sem enrolar",
-  },
-  curious: {
-    pattern: /como funciona|o que é|explica|me conta|quero saber|entender|conhecer/i,
-    style: "Explicar simples, usar exemplo, despertar interesse",
-  },
-};
-
-export function detectEmotion(message: string): { emotion: string; style: string } {
-  const msg = (message || "").toLowerCase();
-
-  for (const [emotion, config] of Object.entries(EMOTION_PATTERNS)) {
-    if ((config as any).pattern.test(msg)) {
-      return { emotion, style: (config as any).style };
-    }
-  }
-
-  return { emotion: "neutral", style: "Descobrir mais sobre a pessoa, fazer perguntas abertas" };
-}
 
 // ============================================
 // DETECÇÃO DE INTENÇÃO (HEURÍSTICA)
@@ -832,6 +791,7 @@ export class ResponseAgent {
       channel?: string;
       ui_mode?: string;
       meta?: Record<string, any>;
+      clientId?: string;
     }
   ): Promise<any> {
     const timer = logger.startTimer("Response Agent - Process Message");
@@ -839,6 +799,13 @@ export class ResponseAgent {
     const channel = String(opts?.channel || "").trim() || "whatsapp";
     const uiMode = String(opts?.ui_mode || "").trim() || "real";
     const entryMeta = opts?.meta && typeof opts.meta === "object" ? opts.meta : {};
+    const clientId = opts?.clientId || clientService.detectClient(phone) || undefined;
+
+    // ✅ Log do cliente detectado
+    if (clientId) {
+      const clientConfig = clientService.getClientConfig(clientId);
+      logger.agent("Client detected", { clientId, clientName: clientConfig?.nome_exibicao });
+    }
 
     try {
       // ✅ Carrega humanizer config do Supabase (cache TTL)
@@ -1096,6 +1063,7 @@ export class ResponseAgent {
       const responseText = await this.generateResponse(conversation, userMessage, emotionData, {
         channel,
         meta: entryMeta,
+        clientId,
       });
 
       // 6.1) plano humanizado
@@ -1213,7 +1181,7 @@ export class ResponseAgent {
     conversation: any,
     userMessage: string,
     emotionData: any,
-    opts?: { channel?: string; meta?: Record<string, any> }
+    opts?: { channel?: string; meta?: Record<string, any>; clientId?: string }
   ): Promise<string> {
     const recentMessages = await supabaseService.getRecentMessages(conversation.id, this.config.maxContextMessages);
 
@@ -1233,11 +1201,24 @@ export class ResponseAgent {
     conversation: any,
     emotionData: any,
     userMessage: string,
-    opts?: { channel?: string; meta?: Record<string, any> }
+    opts?: { channel?: string; meta?: Record<string, any>; clientId?: string }
   ): Promise<string> {
     const lead = conversation.phone ? await supabaseService.getLeadByPhone(conversation.phone) : null;
 
-    let prompt = await getPromptFromDB();
+    // ✅ Prioridade: prompt do cliente > prompt do DB > fallback
+    let prompt: string;
+    
+    if (opts?.clientId) {
+      const clientPrompt = clientService.buildSystemPrompt(opts.clientId);
+      if (clientPrompt) {
+        prompt = clientPrompt;
+        logger.agent("Using client prompt", { clientId: opts.clientId });
+      } else {
+        prompt = await getPromptFromDB();
+      }
+    } else {
+      prompt = await getPromptFromDB();
+    }
 
     if (String(opts?.channel || "") === "landing_chat") {
       prompt = buildLandingSystemPrompt(prompt, opts?.meta);

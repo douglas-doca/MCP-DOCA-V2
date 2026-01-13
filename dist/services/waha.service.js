@@ -1,251 +1,343 @@
+// src/services/waha.service.ts
 // ============================================
-// MCP-DOCA-V2 - WAHA Service
+// WAHA Service - DOCA
+// - sendMessage
+// - sendMedia
+// - typing start/stop + sendTypingFor
+// - sendPlanV3 (typing + bolhas + delays)
+// + ✅ track bot message IDs (para detectar intervenção humana)
+// + ✅ suporta chatId @lid (não converte para @c.us)
 // ============================================
 import { logger } from "../utils/logger.js";
-export class WAHAService {
-    baseUrl;
-    apiKey;
-    session;
-    defaultHeaders;
-    constructor(config) {
-        // Alguns ambientes acabam injetando "WAHA_BASE_URL=..." como valor.
-        // Isso limpa esse lixo e deixa apenas o URL.
-        const sanitizeEnvUrl = (v) => {
-            if (!v)
-                return "";
-            return String(v).trim().replace(/^WAHA_BASE_URL=/i, "");
-        };
-        const envBaseUrl = sanitizeEnvUrl(process.env.WAHA_BASE_URL);
-        this.baseUrl = (config?.baseUrl || envBaseUrl || "http://localhost:3000").replace(/\/$/, "");
-        this.apiKey = config?.apiKey || process.env.WAHA_API_KEY || "";
-        this.session = config?.session || process.env.WAHA_SESSION || "default";
-        this.defaultHeaders = {
-            "Content-Type": "application/json",
-        };
-        // ✅ Compatível com variações do WAHA:
-        // - X-Api-Key
-        // - Authorization: Bearer
-        if (this.apiKey) {
-            this.defaultHeaders["X-Api-Key"] = this.apiKey;
-            this.defaultHeaders["Authorization"] = `Bearer ${this.apiKey}`;
+// ============================================
+// ✅ Bot message id tracking (to distinguish human vs bot)
+// ============================================
+const BOT_SENT_IDS = new Map();
+const BOT_ACTIVE_CHATS = new Map(); // ✅ NOVO: chats onde o bot está enviando
+const BOT_SENT_TTL_MS = Number(process.env.WAHA_BOT_SENT_TTL_MS || 10 * 60 * 1000); // 10 min
+const BOT_ACTIVE_TTL_MS = 30_000; // 30 segundos de "proteção" após enviar
+function cleanupBotIds() {
+    const now = Date.now();
+    for (const [id, ts] of BOT_SENT_IDS.entries()) {
+        if (now - ts > BOT_SENT_TTL_MS)
+            BOT_SENT_IDS.delete(id);
+    }
+    for (const [chatId, ts] of BOT_ACTIVE_CHATS.entries()) {
+        if (now - ts > BOT_ACTIVE_TTL_MS)
+            BOT_ACTIVE_CHATS.delete(chatId);
+    }
+}
+export function rememberBotSentId(id, chatId) {
+    cleanupBotIds();
+    // Salva ID em múltiplos formatos
+    const v = String(id || "").trim();
+    if (v) {
+        BOT_SENT_IDS.set(v, Date.now());
+        // Se tem _ no ID, salva também só a parte final (alguns webhooks retornam só isso)
+        if (v.includes("_")) {
+            const parts = v.split("_");
+            BOT_SENT_IDS.set(parts[parts.length - 1], Date.now());
         }
-        logger.waha("WAHA Service initialized", {
-            baseUrl: this.baseUrl,
-            session: this.session,
-            apiKey: this.apiKey ? "***set***" : "***missing***",
+    }
+    // ✅ Marca o chat como "ativo" (bot enviando)
+    const chat = String(chatId || "").trim();
+    if (chat) {
+        BOT_ACTIVE_CHATS.set(chat, Date.now());
+        // Normaliza também sem @c.us/@lid
+        const phone = chat.replace(/@c\.us$|@lid$|@g\.us$/, "");
+        if (phone && phone !== chat) {
+            BOT_ACTIVE_CHATS.set(phone, Date.now());
+        }
+    }
+}
+export function isBotSentId(id, chatId) {
+    cleanupBotIds();
+    // 1. Verifica pelo ID da mensagem
+    const v = String(id || "").trim();
+    if (v && BOT_SENT_IDS.has(v))
+        return true;
+    // 2. Verifica se ID parcial bate
+    if (v && v.includes("_")) {
+        const parts = v.split("_");
+        if (BOT_SENT_IDS.has(parts[parts.length - 1]))
+            return true;
+    }
+    // 3. ✅ NOVO: Verifica se o chat está "ativo" (bot enviou recentemente)
+    const chat = String(chatId || "").trim();
+    if (chat && BOT_ACTIVE_CHATS.has(chat))
+        return true;
+    // Normaliza sem sufixo
+    const phone = chat.replace(/@c\.us$|@lid$|@g\.us$/, "");
+    if (phone && phone !== chat && BOT_ACTIVE_CHATS.has(phone))
+        return true;
+    return false;
+}
+export class WAHAService {
+    config;
+    constructor(config) {
+        this.config = {
+            baseUrl: config?.baseUrl || process.env.WAHA_BASE_URL || "http://localhost:3000",
+            apiKey: config?.apiKey || process.env.WAHA_API_KEY,
+            session: config?.session || process.env.WAHA_SESSION || "default",
+            timeoutMs: config?.timeoutMs || 25_000,
+            debug: config?.debug ?? (process.env.WAHA_DEBUG === "true"),
+        };
+        logger.agent("WAHA Service initialized", {
+            baseUrl: this.config.baseUrl,
+            session: this.config.session,
+            apiKey: this.config.apiKey ? "***set***" : "***missing***",
         });
     }
-    // ============ Helper Methods ============
+    // ============================================================
+    // Helpers
+    // ============================================================
+    normalizeChatId(input) {
+        const raw = String(input || "").trim();
+        if (!raw)
+            return raw;
+        // ✅ preserve known WA ids
+        if (raw.includes("@c.us") || raw.includes("@g.us") || raw.includes("@lid"))
+            return raw;
+        // remove +, spaces, etc
+        const digits = raw.replace(/\D/g, "");
+        if (!digits)
+            return raw;
+        return `${digits}@c.us`;
+    }
+    async sleep(ms) {
+        const n = Number(ms || 0);
+        if (!n || n <= 0)
+            return;
+        await new Promise((resolve) => setTimeout(resolve, n));
+    }
+    headers() {
+        const h = {
+            "Content-Type": "application/json",
+        };
+        const key = String(this.config.apiKey || "").trim();
+        if (key)
+            h["X-Api-Key"] = key;
+        return h;
+    }
     async request(method, endpoint, body) {
-        const url = `${this.baseUrl}${endpoint}`;
-        const timer = logger.startTimer(`WAHA ${method} ${endpoint}`);
+        const url = `${this.config.baseUrl}${endpoint}`;
+        const controller = new AbortController();
+        const t = setTimeout(() => controller.abort(), this.config.timeoutMs);
         try {
-            logger.request(method, url, body);
-            const response = await fetch(url, {
+            if (this.config.debug) {
+                logger.info("WAHA REQUEST", { method, url, body }, "WAHA");
+            }
+            const res = await fetch(url, {
                 method,
-                headers: this.defaultHeaders,
+                headers: this.headers(),
                 body: body ? JSON.stringify(body) : undefined,
+                signal: controller.signal,
             });
-            const text = await response.text();
-            timer();
-            // tenta parsear json se possível
+            const raw = await res.text();
             let data = null;
             try {
-                data = text ? JSON.parse(text) : null;
+                data = raw ? JSON.parse(raw) : null;
             }
             catch {
-                data = { raw: text };
+                data = raw;
             }
-            if (!response.ok) {
-                const msg = data?.message ||
-                    data?.error ||
-                    `WAHA error: ${response.status} ${response.statusText}`;
-                throw new Error(msg);
+            if (!res.ok) {
+                logger.error("WAHA ERROR RESPONSE", { status: res.status, data }, "WAHA");
+                throw new Error(`WAHA request failed: ${res.status}`);
             }
             return data;
         }
-        catch (error) {
-            logger.error("WAHA request failed", { url, error }, "WAHA");
-            throw error;
+        finally {
+            clearTimeout(t);
         }
+    }
+    // ============================================================
+    // Public API
+    // ============================================================
+    /**
+     * Envia mensagem simples
+     */
+    async sendMessage(payload) {
+        const chatId = this.normalizeChatId(payload.chatId);
+        const text = String(payload.text || "").trim();
+        if (!chatId || !text)
+            return null;
+        const endpoint = `/api/sendText`;
+        const body = {
+            session: this.config.session,
+            chatId,
+            text,
+        };
+        const resp = await this.request("POST", endpoint, body);
+        // ✅ remember bot message id + chatId so we can detect human intervention later
+        const msgId = resp?.id?._serialized ||
+            resp?._data?.id?._serialized ||
+            resp?._data?.id?.id ||
+            resp?.id?.id;
+        rememberBotSentId(msgId, chatId);
+        return resp;
     }
     /**
-     * Normaliza chatId:
-     * - Se já vier como WA JID (ex: 5511...@c.us ou @g.us), retorna
-     * - Se vier como `web_xxx@web`, retorna
-     * - Se vier número (com/sem +55), normaliza e converte para @c.us
+     * Envia mídia com legenda (se suportado)
      */
-    formatChatId(input) {
-        if (!input)
-            return "";
-        const v = String(input).trim();
-        // Se já for um JID válido (WAHA/WA)
-        if (v.includes("@c.us") || v.includes("@g.us") || v.includes("@web"))
-            return v;
-        // Se for chatId genérico web_...
-        if (v.startsWith("web_"))
-            return `${v}@web`;
-        // Remove tudo que não é número
-        let cleaned = v.replace(/\D/g, "");
-        // Se já vier com 55 e 13 dígitos (ex: 5511999999999)
-        if (cleaned.length === 13 && cleaned.startsWith("55")) {
-            return `${cleaned}@c.us`;
-        }
-        // Se vier com 10/11 dígitos (DDD + número), assume Brasil
-        if (cleaned.length === 10 || cleaned.length === 11) {
-            cleaned = "55" + cleaned;
-            return `${cleaned}@c.us`;
-        }
-        // fallback: tenta usar o que tiver
-        return `${cleaned}@c.us`;
-    }
-    // ============ Session Management ============
-    async getSessionStatus() {
-        return this.request("GET", `/api/sessions/${this.session}`);
-    }
-    async startSession() {
-        return this.request("POST", "/api/sessions", {
-            name: this.session,
-            config: {
-                webhooks: [
-                    {
-                        url: process.env.WEBHOOK_URL || "http://localhost:3002/webhook/waha",
-                        events: ["message", "message.ack", "session.status"],
-                    },
-                ],
-            },
-        });
-    }
-    async stopSession() {
-        await this.request("POST", `/api/sessions/${this.session}/stop`);
-    }
-    async getQRCode() {
-        return this.request("GET", `/api/${this.session}/auth/qr`);
-    }
-    // ============ Messaging ============
-    async sendMessage(params) {
-        const chatId = this.formatChatId(params.chatId);
-        const session = params.session || this.session;
-        logger.waha("Sending message", { chatId, textLength: params.text.length });
-        return this.request("POST", `/api/sendText`, {
-            chatId,
-            text: params.text,
-            session,
-        });
-    }
-    async sendMedia(params) {
-        const chatId = this.formatChatId(params.chatId);
-        const session = params.session || this.session;
-        logger.waha("Sending media", { chatId, mediaUrl: params.mediaUrl });
-        return this.request("POST", `/api/sendFile`, {
+    async sendMedia(payload) {
+        const chatId = this.normalizeChatId(payload.chatId);
+        const mediaUrl = String(payload.mediaUrl || "").trim();
+        const caption = payload.caption ? String(payload.caption).trim() : undefined;
+        if (!chatId || !mediaUrl)
+            return null;
+        const endpoint = `/api/sendMedia`;
+        const body = {
+            session: this.config.session,
             chatId,
             file: {
-                url: params.mediaUrl,
+                url: mediaUrl,
             },
-            caption: params.caption,
-            session,
-        });
+        };
+        if (caption)
+            body.caption = caption;
+        const resp = await this.request("POST", endpoint, body);
+        const msgId = resp?.id?._serialized ||
+            resp?._data?.id?._serialized ||
+            resp?._data?.id?.id ||
+            resp?.id?.id;
+        rememberBotSentId(msgId, chatId);
+        return resp;
     }
+    /**
+     * Envia imagem (alias para sendMedia)
+     */
     async sendImage(chatId, imageUrl, caption) {
-        return this.sendMedia({ chatId, mediaUrl: imageUrl, caption });
-    }
-    async sendDocument(chatId, documentUrl, filename) {
-        const formattedChatId = this.formatChatId(chatId);
-        return this.request("POST", `/api/sendFile`, {
-            chatId: formattedChatId,
-            file: {
-                url: documentUrl,
-                filename,
-            },
-            session: this.session,
+        return this.sendMedia({
+            chatId,
+            mediaUrl: imageUrl,
+            caption,
         });
     }
-    async sendButtons(chatId, text, buttons) {
-        const formattedChatId = this.formatChatId(chatId);
-        return this.request("POST", `/api/sendButtons`, {
-            chatId: formattedChatId,
-            text,
-            buttons: buttons.map((btn) => ({
-                id: btn.id,
-                text: btn.text,
-            })),
-            session: this.session,
-        });
+    /**
+     * Busca mensagens do chat
+     */
+    async getMessages(chatId, limit = 20) {
+        const to = this.normalizeChatId(chatId);
+        if (!to)
+            return [];
+        const endpoint = `/api/${this.config.session}/chats/${to}/messages?limit=${limit}`;
+        return this.request("GET", endpoint);
     }
-    async sendList(chatId, title, description, buttonText, sections) {
-        const formattedChatId = this.formatChatId(chatId);
-        return this.request("POST", `/api/sendList`, {
-            chatId: formattedChatId,
-            title,
-            description,
-            buttonText,
-            sections,
-            session: this.session,
-        });
+    /**
+     * Verifica se número tem WhatsApp
+     */
+    async checkNumber(phone) {
+        const digits = String(phone || "").replace(/\D/g, "");
+        if (!digits)
+            return { exists: false };
+        const endpoint = `/api/contacts/check-exists`;
+        const body = {
+            session: this.config.session,
+            phone: digits,
+        };
+        return this.request("POST", endpoint, body);
     }
-    // ============ Chat Management ============
-    async getChatInfo(chatId) {
-        const formattedChatId = this.formatChatId(chatId);
-        return this.request("GET", `/api/${this.session}/chats/${formattedChatId}`);
+    /**
+     * Liga typing
+     */
+    async startTyping(chatId) {
+        const to = this.normalizeChatId(chatId);
+        if (!to)
+            return null;
+        const endpoint = `/api/startTyping`;
+        const body = {
+            session: this.config.session,
+            chatId: to,
+        };
+        return this.request("POST", endpoint, body);
     }
-    async getMessages(chatId, limit = 50) {
-        const formattedChatId = this.formatChatId(chatId);
-        return this.request("GET", `/api/${this.session}/chats/${formattedChatId}/messages?limit=${limit}`);
+    /**
+     * Desliga typing
+     */
+    async stopTyping(chatId) {
+        const to = this.normalizeChatId(chatId);
+        if (!to)
+            return null;
+        const endpoint = `/api/stopTyping`;
+        const body = {
+            session: this.config.session,
+            chatId: to,
+        };
+        return this.request("POST", endpoint, body);
     }
-    async markAsRead(chatId) {
-        const formattedChatId = this.formatChatId(chatId);
-        await this.request("POST", `/api/${this.session}/chats/${formattedChatId}/read`);
-    }
-    async sendTyping(chatId, duration = 3000) {
-        const formattedChatId = this.formatChatId(chatId);
-        await this.request("POST", `/api/${this.session}/startTyping`, {
-            chatId: formattedChatId,
-        });
-        setTimeout(async () => {
+    /**
+     * Simula typing por X ms (start → espera → stop)
+     */
+    async sendTypingFor(chatId, ms) {
+        const to = this.normalizeChatId(chatId);
+        if (!to)
+            return;
+        try {
+            await this.startTyping(to);
+            await this.sleep(ms);
+        }
+        catch (err) {
+            logger.warn("TypingFor failed (ignored)", { chatId: to, err }, "WAHA");
+        }
+        finally {
             try {
-                await this.request("POST", `/api/${this.session}/stopTyping`, {
-                    chatId: formattedChatId,
-                });
+                await this.stopTyping(to);
             }
             catch {
                 // ignore
             }
-        }, duration);
-    }
-    // ============ Contact Management ============
-    async getContactInfo(contactId) {
-        const formattedId = this.formatChatId(contactId);
-        return this.request("GET", `/api/${this.session}/contacts/${formattedId}`);
-    }
-    async checkNumberExists(phone) {
-        const formattedPhone = String(phone).replace(/\D/g, "");
-        return this.request("GET", `/api/${this.session}/contacts/check-exists?phone=${formattedPhone}`);
-    }
-    // ============ Utility ============
-    async getScreenshot() {
-        return this.request("GET", `/api/${this.session}/screenshot`);
-    }
-    async getMe() {
-        const session = await this.getSessionStatus();
-        if (!session.me)
-            throw new Error("Session not authenticated");
-        return session.me;
-    }
-    // ============ Message Formatting Helpers ============
-    formatPhoneNumber(phone) {
-        const cleaned = phone.replace("@c.us", "").replace(/\D/g, "");
-        if (cleaned.length === 13 && cleaned.startsWith("55")) {
-            return `+${cleaned.slice(0, 2)} (${cleaned.slice(2, 4)}) ${cleaned.slice(4, 9)}-${cleaned.slice(9)}`;
         }
-        return `+${cleaned}`;
     }
-    extractPhoneFromChatId(chatId) {
-        return String(chatId).replace("@c.us", "").replace("@g.us", "").replace("@web", "");
-    }
-    isGroup(chatId) {
-        return String(chatId).endsWith("@g.us");
+    // ============================================================
+    // ✅ Humanized Plan Executor (V3)
+    // ============================================================
+    async sendPlanV3(chatId, items) {
+        const to = this.normalizeChatId(chatId);
+        if (!to)
+            return;
+        if (!items || !Array.isArray(items) || items.length === 0)
+            return;
+        const safeItems = items.slice(0, 20);
+        // ✅ Pre-mark chat como ativo ANTES de enviar (evita race condition)
+        rememberBotSentId(null, to);
+        logger.agent("WAHA sendPlanV3", { chatId: to, items: safeItems.length });
+        for (const item of safeItems) {
+            try {
+                if (item.type === "typing") {
+                    if (item.action === "start")
+                        await this.startTyping(to);
+                    else
+                        await this.stopTyping(to);
+                    if (item.delayMs)
+                        await this.sleep(item.delayMs);
+                    continue;
+                }
+                if (item.type === "text") {
+                    const text = String(item.text || "").trim();
+                    if (text)
+                        await this.sendMessage({ chatId: to, text });
+                    if (item.delayMs)
+                        await this.sleep(item.delayMs);
+                    continue;
+                }
+            }
+            catch (err) {
+                logger.warn("WAHA plan item failed (continuing)", { chatId: to, item, err }, "WAHA");
+            }
+        }
+        try {
+            await this.stopTyping(to);
+        }
+        catch {
+            // ignore
+        }
     }
 }
-// Exportar instância singleton
-export const wahaService = new WAHAService();
-//# sourceMappingURL=waha.service.js.map
+// Singleton
+const GLOBAL_KEY = "__DOCA_WAHA_SINGLETON__";
+const g = globalThis;
+if (!g[GLOBAL_KEY]) {
+    g[GLOBAL_KEY] = new WAHAService();
+}
+export const wahaService = g[GLOBAL_KEY];
