@@ -142,8 +142,11 @@ export function mapStatsToDashboardV2(stats: RawStats | any): DashboardV2Stats {
 // Endpoints
 // ------------------------------------------------
 
-export async function getStats(): Promise<DashboardV2Stats> {
-  const raw = await request<RawStats>("/stats");
+// ✅ CORRIGIDO: Agora aceita tenantId para filtrar por cliente
+export async function getStats(tenantId?: string): Promise<DashboardV2Stats> {
+  let url = "/stats";
+  if (tenantId) url += `?tenant_id=${tenantId}`;
+  const raw = await request<RawStats>(url);
   return mapStatsToDashboardV2(raw);
 }
 

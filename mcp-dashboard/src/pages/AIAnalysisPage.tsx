@@ -69,6 +69,7 @@ type FollowUp = {
 };
 
 type Props = {
+  tenantId?: string | null;
   conversations?: any[];
   leads?: any[];
   onSendFollowUp?: (lead: any, message: string) => void;
@@ -234,6 +235,7 @@ export default function AIAnalysisPage(props: Props) {
   const demoMode = isDemoMode();
   const demo = useMemo(() => (demoMode ? getDemoData() : null), [demoMode]);
 
+  const tenantId = props.tenantId;
   const [conversations, setConversations] = useState<Conv[]>([]);
   const [leads, setLeads] = useState<Lead[]>([]);
   const [messages, setMessages] = useState<Msg[]>([]);
@@ -273,8 +275,11 @@ export default function AIAnalysisPage(props: Props) {
         return;
       }
 
-      // Real mode
-      const convRes = await fetch("/api/conversations?limit=100");
+      // Real mode - ✅ USA tenantId
+      const convUrl = tenantId 
+        ? `/api/conversations?limit=100&tenant_id=${tenantId}`
+        : `/api/conversations?limit=100`;
+      const convRes = await fetch(convUrl);
       const convs = await convRes.json();
       const mappedConvs: Conv[] = (convs || []).map((c: any) => ({
         id: c.id,
@@ -291,7 +296,11 @@ export default function AIAnalysisPage(props: Props) {
       }));
       setConversations(mappedConvs);
 
-      const leadsRes = await fetch("/api/leads?limit=200");
+      // ✅ USA tenantId
+      const leadsUrl = tenantId
+        ? `/api/leads?limit=200&tenant_id=${tenantId}`
+        : `/api/leads?limit=200`;
+      const leadsRes = await fetch(leadsUrl);
       const ls = await leadsRes.json();
       const mappedLeads: Lead[] = (ls || []).map((l: any) => ({
         id: l.id,
@@ -349,7 +358,8 @@ export default function AIAnalysisPage(props: Props) {
     }
   }
 
-  useEffect(() => { loadData(); }, []);
+  // ✅ Recarrega quando tenantId mudar
+  useEffect(() => { loadData(); }, [tenantId]);
 
   // ============ FILTERED CONVS ============
 

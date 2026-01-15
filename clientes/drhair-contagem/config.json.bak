@@ -1,6 +1,5 @@
 {
   "id": "drhair-contagem",
-  "message_provider": "zapi",
   "franquia_id": "drhair-contagem",
   "nome": "Dr. Hair Contagem",
   "nome_exibicao": "Dr. Hair Contagem",
@@ -122,48 +121,23 @@
   },
   "emotion_mapping": {
     "skeptical": {
-      "keywords": [
-        "duvido",
-        "será",
-        "não acredito",
-        "mentira"
-      ],
+      "keywords": ["duvido", "será", "não acredito", "mentira"],
       "instruction": "Aumente credibilidade com casos reais"
     },
     "anxious": {
-      "keywords": [
-        "urgente",
-        "rápido",
-        "agora",
-        "hoje",
-        "já"
-      ],
+      "keywords": ["urgente", "rápido", "agora", "hoje", "já"],
       "instruction": "Vá mais devagar, seja calorosa"
     },
     "frustrated": {
-      "keywords": [
-        "desisto",
-        "cansado",
-        "nada funciona"
-      ],
+      "keywords": ["desisto", "cansado", "nada funciona"],
       "instruction": "Máxima empatia, zero pressão"
     },
     "excited": {
-      "keywords": [
-        "quero",
-        "vamos",
-        "ótimo",
-        "bora"
-      ],
+      "keywords": ["quero", "vamos", "ótimo", "bora"],
       "instruction": "Acompanhe a energia, acelere fechamento"
     },
     "price_sensitive": {
-      "keywords": [
-        "caro",
-        "valor",
-        "preço",
-        "quanto"
-      ],
+      "keywords": ["caro", "valor", "preço", "quanto"],
       "instruction": "Foque no valor, não no preço"
     }
   },
@@ -174,9 +148,5 @@
     "3": "Educar sobre o método",
     "4": "Oferecer avaliação gratuita",
     "5": "Confirmar agendamento"
-  },
-  "tools": [
-    "agendamento"
-  ],
-  "scheduler_url": "http://drhair-scheduler:3001"
+  }
 }

@@ -63,53 +63,58 @@ async function main() {
   // ✅ SETTINGS (compatível com lib/api/settings.ts do dashboard)
   // =========================================================
 
-  // GET /api/settings?key=...
+  // GET /api/settings?key=...&tenant_id=...
   app.get("/api/settings", async (req, res) => {
     const key = String(req.query.key || "").trim();
+    const tenantId = req.query.tenant_id ? String(req.query.tenant_id).trim() : null;
+    
     if (!key) return res.status(400).json({ error: "Missing key" });
 
-    // Se você tem uma tabela "settings", vamos usar ela.
-    // Caso não exista ainda, você pode criar depois.
+    // Build query with tenant_id filter
+    let query = `key=eq.${encodeURIComponent(key)}`;
+    if (tenantId) {
+      query += `&tenant_id=eq.${encodeURIComponent(tenantId)}`;
+    } else {
+      query += `&tenant_id=is.null`;
+    }
+
     const row = await supabaseService.request<any>("GET", "settings", {
-      query: `key=eq.${encodeURIComponent(key)}`,
+      query,
       single: true,
     });
 
     if (!row) {
-      // compatível com seu dashboard: retorna { key, value: null }
       return res.status(200).json({ key, value: null });
     }
 
-    // row.value pode ser string JSON (se você salvou como string)
-    // ou pode ser jsonb no supabase. Vamos suportar os 2.
     const parsedValue = safeJsonParse(row.value, row.value);
 
     return res.status(200).json({
       key: row.key,
       value: parsedValue,
+      tenant_id: row.tenant_id,
     });
   });
 
-  // POST /api/settings  { key, value }
+  // POST /api/settings  { key, value, tenant_id }
   app.post("/api/settings", async (req, res) => {
     const key = String(req.body?.key || "").trim();
     const value = req.body?.value;
+    const tenantId = req.body?.tenant_id || null;
 
     if (!key) return res.status(400).json({ error: "Missing key" });
 
-    // ✅ Decide como salvar:
-    // - se for objeto/array -> salvar JSON string OU direto (jsonb).
-    // Aqui eu recomendo salvar direto no Supabase como JSONB.
     const data = {
       key,
       value,
+      tenant_id: tenantId,
       updated_at: new Date().toISOString(),
       created_at: new Date().toISOString(),
     };
 
-    // ✅ UPSERT (precisa de constraint unique em settings.key)
+    // UPSERT - precisa de constraint unique em (key, tenant_id)
     const result = await supabaseService.request<any[]>("POST", "settings", {
-      query: "on_conflict=key",
+      query: "on_conflict=key,tenant_id",
       body: data,
     });
 
@@ -117,35 +122,38 @@ async function main() {
       return res.status(500).json({ error: "Failed to save setting" });
     }
 
-    return res.status(200).json({ success: true, key });
+    logger.info(`Settings saved: ${key} for tenant ${tenantId}`, undefined, "HTTP");
+    return res.status(200).json({ success: true, key, tenant_id: tenantId });
   });
 
   // =========================================================
   // ✅ DASHBOARD DATA
   // =========================================================
 
-  // GET /api/stats
-  app.get("/api/stats", async (_req, res) => {
-    const stats = await supabaseService.getDashboardStats();
+  // GET /api/stats?tenant_id=...
+  app.get("/api/stats", async (req, res) => {
+    const tenantId = req.query.tenant_id ? String(req.query.tenant_id) : undefined;
+    const stats = await supabaseService.getDashboardStats(tenantId);
     return res.status(200).json(stats);
   });
 
-  // GET /api/conversations?limit=50
+  // GET /api/conversations?limit=50&tenant_id=...
   app.get("/api/conversations", async (req, res) => {
     const limit = Number(req.query.limit || 50);
-    const data = await supabaseService.getConversations(limit);
+    const tenantId = req.query.tenant_id ? String(req.query.tenant_id) : undefined;
+    const data = await supabaseService.getConversations(limit, tenantId);
     return res.status(200).json(data);
   });
 
-  // GET /api/leads?limit=50&status=qualified
+  // GET /api/leads?limit=50&status=qualified&tenant_id=...
   app.get("/api/leads", async (req, res) => {
     const limit = Number(req.query.limit || 50);
     const status = req.query.status ? String(req.query.status) : undefined;
-    const data = await supabaseService.getLeads(status, limit);
+    const tenantId = req.query.tenant_id ? String(req.query.tenant_id) : undefined;
+    const data = await supabaseService.getLeads(status, limit, tenantId);
     return res.status(200).json(data);
   });
 
-  // ✅ Messages por conversa (pra você ligar depois no dashboard)
   // GET /api/messages?conversation_id=...&limit=50
   app.get("/api/messages", async (req, res) => {
     const conversationId = String(req.query.conversation_id || "");

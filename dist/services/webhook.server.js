@@ -212,6 +212,7 @@ export class WebhookServer {
     setupRoutes() {
         this.addRoute("POST", "/webhook/waha", this.handleWAHAWebhook.bind(this));
         this.addRoute("POST", "/webhook/message", this.handleWAHAWebhook.bind(this));
+        this.addRoute("POST", "/webhook/zapi", this.handleZAPIWebhook.bind(this));
         this.addRoute("GET", "/health", this.handleHealth.bind(this));
         this.addRoute("GET", "/stats", this.handleStats.bind(this));
         this.addRoute("POST", "/send", this.handleSendMessage.bind(this));
@@ -876,9 +877,12 @@ export class WebhookServer {
         try {
             const url = new URL(req.url, `http://${req.headers.host}`);
             const category = url.searchParams.get("category");
+            const tenantId = url.searchParams.get("tenant_id");
             let query = "order=priority.desc,created_at.desc";
             if (category)
                 query = `category=eq.${category}&${query}`;
+            if (tenantId)
+                query = `tenant_id=eq.${tenantId}&${query}`;
             const result = await supabaseService.request("GET", "knowledge_base", { query });
             this.sendJSON(res, 200, result || []);
         }
@@ -1441,6 +1445,180 @@ export class WebhookServer {
     sendJSON(res, status, data) {
         res.writeHead(status, { "Content-Type": "application/json" });
         res.end(JSON.stringify(data));
+    }
+    // ============ Webhook Z-API ============
+    async handleZAPIWebhook(req, res, body) {
+        try {
+            const payload = JSON.parse(body);
+            logger.webhook("Z-API webhook received", {
+                type: payload.type,
+                phone: payload.phone,
+                fromMe: payload.fromMe,
+                instanceId: payload.instanceId,
+            });
+            // Ignorar se não for mensagem recebida
+            if (payload.type !== "ReceivedCallback") {
+                this.sendJSON(res, 200, { status: "ignored", reason: "not ReceivedCallback" });
+                return;
+            }
+            // Ignorar notificações do sistema
+            if (payload.notification || payload.waitingMessage) {
+                this.sendJSON(res, 200, { status: "ignored", reason: "notification or waiting" });
+                return;
+            }
+            // Ignorar mensagens enviadas por mim (mas detectar handoff)
+            if (payload.fromMe === true) {
+                const phone = String(payload.phone || "").replace(/\D/g, "");
+                const chatId = `${phone}@c.us`;
+                const msgId = payload.messageId || "";
+                if (!isBotSentId(msgId, chatId)) {
+                    pauseChat(chatId, "human_intervention", "human", HANDOFF_TTL_MINUTES);
+                }
+                this.sendJSON(res, 200, { status: "ok", reason: "fromMe processed" });
+                return;
+            }
+            // Extrair dados
+            const phone = String(payload.phone || "").replace(/\D/g, "");
+            const chatId = `${phone}@c.us`;
+            const text = payload.text?.message || "";
+            const instanceId = payload.instanceId;
+            // Ignorar grupos
+            if (this.config.ignoreGroups && (payload.isGroup || String(payload.phone || "").includes("-"))) {
+                this.sendJSON(res, 200, { status: "ignored", reason: "group message" });
+                return;
+            }
+            // Blocked/allowed
+            if (this.isBlocked(phone)) {
+                this.sendJSON(res, 200, { status: "ignored", reason: "blocked number" });
+                return;
+            }
+            if (!this.isAllowed(phone)) {
+                this.sendJSON(res, 200, { status: "ignored", reason: "not in allowed list" });
+                return;
+            }
+            // Anti-duplicado
+            const messageKey = payload.messageId || `zapi-${phone}-${Date.now()}`;
+            if (this.processingQueue.has(messageKey)) {
+                this.sendJSON(res, 200, { status: "ignored", reason: "already processing" });
+                return;
+            }
+            this.processingQueue.add(messageKey);
+            this.sendJSON(res, 200, { status: "processing" });
+            // Detectar cliente pelo instanceId
+            const clientId = clientService.detectClient(phone, instanceId) || undefined;
+            // Processar
+            this.processZAPIMessage(phone, chatId, text, clientId, instanceId, messageKey).finally(() => {
+                this.processingQueue.delete(messageKey);
+            });
+        }
+        catch (error) {
+            logger.error("Error handling Z-API webhook", error);
+            this.sendJSON(res, 500, { error: "Internal server error" });
+        }
+    }
+    // ============ Processar Mensagem Z-API ============
+    async processZAPIMessage(phone, chatId, text, clientId, instanceId, msgId) {
+        const clientConfig = clientId ? clientService.getClientConfig(clientId) : null;
+        logger.conversation("Processing Z-API message", {
+            phone,
+            chatId,
+            clientId: clientId || "unknown",
+            clientName: clientConfig?.nome_exibicao || "N/A",
+            text: text.substring(0, 50),
+        });
+        // Global ON/OFF
+        try {
+            const st = await getAgentEnabled();
+            if (!st.enabled) {
+                logger.conversation("Agent disabled globally, skipping reply", { phone, chatId });
+                return;
+            }
+        }
+        catch (e) {
+            logger.warn("Agent status check failed, skipping reply", { phone, chatId, error: String(e?.message || e) });
+            return;
+        }
+        // Verificar pause
+        if (isChatPaused(chatId)) {
+            logger.conversation("Conversation paused, skipping reply", { chatId, phone, tag: "HANDOFF" });
+            return;
+        }
+        // Anti-duplicado
+        if (msgId) {
+            this.cleanupProcessed();
+            if (this.processedMessageIds.has(msgId)) {
+                logger.conversation("Duplicate message ignored", { phone, msgId });
+                return;
+            }
+            this.processedMessageIds.set(msgId, Date.now());
+        }
+        try {
+            if (!this.config.autoReply)
+                return;
+            const result = await responseAgent.processMessage(phone, chatId, text, {
+                channel: "whatsapp",
+                ui_mode: "real",
+                meta: { provider: "zapi", instanceId },
+                clientId,
+            });
+            const finalText = String(result?.response || "").trim();
+            if (!finalText)
+                return;
+            // Verificar pause novamente
+            if (isChatPaused(chatId)) {
+                logger.conversation("Conversation paused mid-flight, skipping send", { chatId, phone, tag: "HANDOFF" });
+                return;
+            }
+            // Enviar via Z-API
+            const zapiConfig = clientConfig?.zapi;
+            if (zapiConfig?.instance_id && zapiConfig?.token) {
+                await this.sendZAPIMessage(phone, finalText, zapiConfig);
+                logger.conversation("Response sent via Z-API", {
+                    phone,
+                    chatId,
+                    emotion: result.emotion,
+                    shouldEscalate: result.shouldEscalate,
+                });
+            }
+            else {
+                logger.error("Z-API config not found for client", { clientId, phone });
+            }
+            if (result.shouldEscalate) {
+                logger.warn("Escalation needed", { phone, reason: result.escalationReason });
+            }
+        }
+        catch (error) {
+            logger.error("Error processing Z-API message", error);
+            if (isChatPaused(chatId))
+                return;
+            try {
+                const zapiConfig = clientConfig?.zapi;
+                if (zapiConfig?.instance_id && zapiConfig?.token) {
+                    await this.sendZAPIMessage(phone, "Desculpe, tive um problema técnico. Um atendente irá te ajudar em breve! 🙏", zapiConfig);
+                }
+            }
+            catch (e) {
+                logger.error("Failed to send error message via Z-API", e);
+            }
+        }
+    }
+    // ============ Enviar via Z-API ============
+    async sendZAPIMessage(phone, text, config) {
+        const url = `https://api.z-api.io/instances/${config.instance_id}/token/${config.token}/send-text`;
+        const headers = { "Content-Type": "application/json" };
+        if (config.clientToken)
+            headers["Client-Token"] = config.clientToken;
+        const response = await fetch(url, {
+            method: "POST",
+            headers,
+            body: JSON.stringify({ phone, message: text }),
+        });
+        if (!response.ok) {
+            const err = await response.text();
+            logger.error("Z-API send failed", { status: response.status, error: err });
+            return null;
+        }
+        return response.json();
     }
     updateConfig(updates) {
         this.config = { ...this.config, ...updates };

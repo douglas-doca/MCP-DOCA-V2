@@ -262,12 +262,11 @@ export default function App() {
         return;
       }
 
-      // PROD MODE - com filtro de tenant
       const [statsData, convsData, leadsData] = await Promise.all([
-        getStats(),
-        getConversations(50, tenantToUse || undefined),
-        getLeads(50, tenantToUse || undefined),
-      ]);
+  getStats(tenantToUse || undefined),  // ← ADICIONAR tenantToUse aqui
+  getConversations(50, tenantToUse || undefined),
+  getLeads(50, tenantToUse || undefined),
+]);
 
       setStats(statsData);
       setConversations(convsData || []);
@@ -806,6 +805,7 @@ export default function App() {
 
             {currentPage === "analysis" && (
               <AIAnalysisPage
+                tenantId={selectedTenantId}
                 conversations={conversations}
                 leads={leads}
                 onSendFollowUp={handleSendFollowUp}
@@ -821,22 +821,26 @@ export default function App() {
               />
             )}
 
-            {currentPage === "training" && <TrainingPage />}
+            {currentPage === "training" && <TrainingPage tenantId={selectedTenantId} />}
 
             {currentPage === "integrations" && <IntegrationsPage />}
 
-            {currentPage === "agent-studio" && <AgentStudioPage />}
+            {currentPage === "agent-studio" && <AgentStudioPage tenantId={selectedTenantId} />}
 
             {currentPage === "settings" && <SettingsPage />}
             {currentPage === "users" && <UsersPage />}
             {currentPage === "tenants" && (
-              <TenantsPage
-                onConfigure={(id) => {
-                  setConfigTenantId(id);
-                  setCurrentPage("tenant-config");
-                }}
-              />
-            )}
+  <TenantsPage
+    selectedTenantId={selectedTenantId}
+    onSelectTenant={(id) => {
+      setSelectedTenantId(id);
+    }}
+    onConfigure={(id) => {
+      setConfigTenantId(id);
+      setCurrentPage("tenant-config");
+    }}
+  />
+)}
             {currentPage === "metrics" && <MetricsPage />}
             {currentPage === "tenant-config" && configTenantId && (
               <TenantConfigPage

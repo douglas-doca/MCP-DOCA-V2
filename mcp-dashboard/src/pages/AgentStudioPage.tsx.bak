@@ -135,12 +135,9 @@ const DEFAULT_CONFIG: AgentConfig = {
 
 const API_BASE = import.meta.env.VITE_API_URL || "";
 
-async function loadAgentConfig(tenantId?: string | null): Promise<AgentConfig | null> {
+async function loadAgentConfig(): Promise<AgentConfig | null> {
   try {
-    const url = tenantId 
-      ? `${API_BASE}/api/settings?key=agent_studio_config&tenant_id=${tenantId}`
-      : `${API_BASE}/api/settings?key=agent_studio_config`;
-    const res = await fetch(url);
+    const url = tenantId ? `${API_BASE}/api/settings?key=agent_studio_config&tenant_id=${tenantId}` : `${API_BASE}/api/settings?key=agent_studio_config`; const res = await fetch(url);
     if (!res.ok) return null;
     const data = await res.json();
     if (data?.value) {
@@ -152,12 +149,12 @@ async function loadAgentConfig(tenantId?: string | null): Promise<AgentConfig | 
   }
 }
 
-async function saveAgentConfig(config: AgentConfig, tenantId?: string | null): Promise<boolean> {
+async function saveAgentConfig(config: AgentConfig): Promise<boolean> {
   try {
     const res = await fetch(`${API_BASE}/api/settings`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ key: "agent_studio_config", value: config, tenant_id: tenantId }),
+      body: JSON.stringify({ key: "agent_studio_config", value: config }),
     });
     return res.ok;
   } catch {
@@ -167,9 +164,7 @@ async function saveAgentConfig(config: AgentConfig, tenantId?: string | null): P
 
 // ============ MAIN COMPONENT ============
 
-type Props = { tenantId?: string | null };
-
-export default function AgentStudioPage({ tenantId }: Props) {
+export default function AgentStudioPage() {
   const [tab, setTab] = useState<"basico" | "estagio" | "emocao" | "templates" | "preview">("basico");
   const [config, setConfig] = useState<AgentConfig>(DEFAULT_CONFIG);
   const [originalConfig, setOriginalConfig] = useState<AgentConfig>(DEFAULT_CONFIG);
@@ -187,14 +182,14 @@ export default function AgentStudioPage({ tenantId }: Props) {
 
   // Load config on mount
   useEffect(() => {
-    loadAgentConfig(tenantId).then(data => {
+    loadAgentConfig().then(data => {
       if (data) {
         setConfig(data);
         setOriginalConfig(data);
       }
       setLoading(false);
     });
-  }, [tenantId]);
+  }, []);
 
   // Scroll to bottom on new messages
   useEffect(() => {
@@ -212,7 +207,7 @@ export default function AgentStudioPage({ tenantId }: Props) {
 
   async function handleSave() {
     setSaving(true);
-    const success = await saveAgentConfig(config, tenantId);
+    const success = await saveAgentConfig(config);
     setSaving(false);
     
     if (success) {

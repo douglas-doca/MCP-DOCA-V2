@@ -1,11 +1,18 @@
 // ============================================
 // MCP-DOCA-V2 - Client Service
 // Gerencia clientes a partir da pasta /clientes
+// ✅ Atualizado: suporte a message_provider (waha/zapi)
 // ============================================
 
 import fs from 'fs';
 import path from 'path';
 import { logger } from '../utils/logger.js';
+
+// ============================================
+// TIPOS
+// ============================================
+
+type MessageProvider = "waha" | "zapi";
 
 interface ClientConfig {
   id: string;
@@ -18,17 +25,31 @@ interface ClientConfig {
   horario_funcionamento?: any;
   servicos?: string[];
   personalizacao?: any;
+  
+  // ✅ Provider de mensagem
+  message_provider?: MessageProvider;
+  
+  // ✅ Config Z-API
   zapi?: {
     instance_id: string;
     token: string;
-    clientToken: string;
+    clientToken?: string;
   };
+  
+  // ✅ Config WAHA
+  waha?: {
+    session?: string;
+    api_url?: string;
+  };
+  
   crm?: any;
   ai_config?: any;
   features?: any;
   conversation?: any;
   emotion_mapping?: any;
   journey_stages?: any;
+  tools?: string[];
+  scheduler_url?: string;
 }
 
 interface Client {
@@ -39,10 +60,15 @@ interface Client {
   provasSociais: string[];
 }
 
+// ============================================
+// CLIENT SERVICE
+// ============================================
+
 class ClientService {
   private clientsPath: string;
   private clients: Map<string, Client> = new Map();
   private phoneToClient: Map<string, string> = new Map();
+  private instanceToClient: Map<string, string> = new Map(); // ✅ Mapa separado para instanceId
 
   constructor() {
     this.clientsPath = path.join(process.cwd(), 'clientes');
@@ -79,12 +105,15 @@ class ClientService {
               this.phoneToClient.set(phone, folder);
             }
 
-            // Mapear instance_id Z-API para cliente
+            // ✅ Mapear instance_id Z-API para cliente
             if (client.config.zapi?.instance_id) {
+              this.instanceToClient.set(client.config.zapi.instance_id, folder);
+              // Também no phoneToClient para compatibilidade
               this.phoneToClient.set(client.config.zapi.instance_id, folder);
             }
 
-            logger.info(`✅ Cliente carregado: ${folder} (${client.config.nome_exibicao})`, undefined, 'CLIENT');
+            const provider = client.config.message_provider || this.inferProvider(client.config);
+            logger.info(`✅ Cliente carregado: ${folder} (${client.config.nome_exibicao}) [${provider}]`, undefined, 'CLIENT');
           }
         } catch (err) {
           logger.error(`Erro ao carregar cliente ${folder}:`, err, 'CLIENT');
@@ -172,33 +201,100 @@ class ClientService {
     return Array.from(this.clients.values());
   }
 
-  listClients(): Array<{ id: string; nome: string; telefone?: string }> {
+  listClients(): Array<{ id: string; nome: string; telefone?: string; provider?: MessageProvider }> {
     return Array.from(this.clients.values()).map(c => ({
       id: c.id,
       nome: c.config.nome_exibicao || c.config.nome,
       telefone: c.config.telefone,
+      provider: c.config.message_provider || this.inferProvider(c.config),
     }));
+  }
+
+  // ============ Provider ============
+
+  /**
+   * Infere o provider baseado na config (se não tiver message_provider explícito)
+   */
+  private inferProvider(config: ClientConfig): MessageProvider {
+    // Se tem config Z-API válido, usa Z-API
+    if (config.zapi?.instance_id && config.zapi?.token) {
+      return "zapi";
+    }
+    // Default: WAHA
+    return "waha";
+  }
+
+  /**
+   * Retorna o provider de um cliente
+   */
+  getClientProvider(clientId: string): MessageProvider {
+    const config = this.getClientConfig(clientId);
+    if (!config) return "waha";
+    
+    return config.message_provider || this.inferProvider(config);
+  }
+
+  /**
+   * Retorna config do Z-API de um cliente
+   */
+  getClientZapiConfig(clientId: string): ClientConfig['zapi'] | undefined {
+    return this.getClientConfig(clientId)?.zapi;
+  }
+
+  /**
+   * Retorna config do WAHA de um cliente
+   */
+  getClientWahaConfig(clientId: string): ClientConfig['waha'] | undefined {
+    return this.getClientConfig(clientId)?.waha;
   }
 
   // ============ Detecção de Cliente ============
 
+  /**
+   * Detecta cliente por telefone ou instanceId
+   */
   detectClient(phone?: string, instanceId?: string): string | null {
-    // Por instance_id do Z-API
-    if (instanceId && this.phoneToClient.has(instanceId)) {
-      return this.phoneToClient.get(instanceId)!;
+    // ✅ Por instance_id do Z-API (prioridade)
+    if (instanceId) {
+      if (this.instanceToClient.has(instanceId)) {
+        return this.instanceToClient.get(instanceId)!;
+      }
+      // Fallback para phoneToClient (compatibilidade)
+      if (this.phoneToClient.has(instanceId)) {
+        return this.phoneToClient.get(instanceId)!;
+      }
     }
 
     // Por telefone
     if (phone) {
       const cleanPhone = phone.replace(/\D/g, '');
+      
+      // Busca exata
       if (this.phoneToClient.has(cleanPhone)) {
         return this.phoneToClient.get(cleanPhone)!;
+      }
+      
+      // ✅ Busca parcial (últimos 8-11 dígitos)
+      for (const [mappedPhone, clientId] of this.phoneToClient) {
+        // Pula instanceIds (não são números de telefone)
+        if (mappedPhone.length < 8) continue;
+        
+        if (cleanPhone.endsWith(mappedPhone) || mappedPhone.endsWith(cleanPhone)) {
+          return clientId;
+        }
       }
     }
 
     // Retorna primeiro cliente como fallback
     const firstClient = this.clients.keys().next().value;
     return firstClient || null;
+  }
+
+  /**
+   * ✅ Detecta cliente pelo instanceId do Z-API (usado no webhook)
+   */
+  detectClientByInstanceId(instanceId: string): string | null {
+    return this.instanceToClient.get(instanceId) || null;
   }
 
   // ============ Build System Prompt ============
@@ -218,6 +314,7 @@ class ClientService {
   reload(): void {
     this.clients.clear();
     this.phoneToClient.clear();
+    this.instanceToClient.clear();
     this.loadClients();
     logger.info('Clientes recarregados', undefined, 'CLIENT');
   }
@@ -227,6 +324,8 @@ class ClientService {
   async syncToSupabase(supabase: any): Promise<void> {
     for (const [id, client] of this.clients) {
       try {
+        const provider = client.config.message_provider || this.inferProvider(client.config);
+        
         const { error } = await supabase
           .from('tenants')
           .upsert({
@@ -237,6 +336,8 @@ class ClientService {
             specialty: client.config.especialidade,
             agent_config: client.config.personalizacao,
             zapi_config: client.config.zapi,
+            waha_config: client.config.waha,
+            message_provider: provider, // ✅ Salva provider
             crm_config: client.config.crm,
             business_hours: client.config.horario_funcionamento,
             prompt: client.prompt,
@@ -246,7 +347,7 @@ class ClientService {
         if (error) {
           logger.error(`Erro ao sincronizar ${id}:`, error, 'CLIENT');
         } else {
-          logger.info(`✅ Sincronizado: ${id}`, undefined, 'CLIENT');
+          logger.info(`✅ Sincronizado: ${id} [${provider}]`, undefined, 'CLIENT');
         }
       } catch (err) {
         logger.error(`Erro ao sincronizar ${id}:`, err, 'CLIENT');

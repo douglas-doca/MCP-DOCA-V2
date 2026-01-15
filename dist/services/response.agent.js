@@ -13,6 +13,7 @@
 // - memória de cenário via conversation.context.profile.has_scenario
 // - ✅ suporte channel/ui_mode/meta (landing_chat)
 // - ✅ Landing prompt + intention override
+// - ✅ Multi-tenant: tenant_id nas criações
 // ============================================
 import { logger } from "../utils/logger.js";
 import { aiService } from "./ai.service.js";
@@ -20,6 +21,7 @@ import { supabaseService } from "./supabase.service.js";
 import { emotionService, detectEmotion } from "./emotion.service.js";
 import { calendarOrchestrator } from "./calendar/calendar.orchestrator.js";
 import { clientService } from "./client.service.js";
+import { schedulerService } from "./scheduler.service.js";
 // ============================================
 // CACHE DO PROMPT (recarrega a cada 5 minutos)
 // ============================================
@@ -618,10 +620,17 @@ export class ResponseAgent {
         const uiMode = String(opts?.ui_mode || "").trim() || "real";
         const entryMeta = opts?.meta && typeof opts.meta === "object" ? opts.meta : {};
         const clientId = opts?.clientId || clientService.detectClient(phone) || undefined;
-        // ✅ Log do cliente detectado
+        // ✅ MULTI-TENANT: Buscar tenant_id pelo slug do cliente
+        let tenantId = undefined;
         if (clientId) {
             const clientConfig = clientService.getClientConfig(clientId);
             logger.agent("Client detected", { clientId, clientName: clientConfig?.nome_exibicao });
+            // ✅ Buscar tenant_id no Supabase
+            const fetchedTenantId = await supabaseService.getTenantIdBySlug(clientId);
+            if (fetchedTenantId) {
+                tenantId = fetchedTenantId;
+                logger.agent("Tenant ID resolved", { clientId, tenantId });
+            }
         }
         try {
             // ✅ Carrega humanizer config do Supabase (cache TTL)
@@ -644,8 +653,8 @@ export class ResponseAgent {
                 intention = overrideIntentionForLanding(userMessage, intention);
             }
             logger.agent("Intention detected", { intention, channel });
-            // 1) conversa
-            const conversation = await supabaseService.getOrCreateConversation(phone, chatId);
+            // 1) conversa - ✅ PASSA tenantId
+            const conversation = await supabaseService.getOrCreateConversation(phone, chatId, tenantId);
             // 1.1) contexto (memória)
             const context = safeGetConversationContext(conversation);
             context.profile = context.profile || {};
@@ -695,10 +704,12 @@ export class ResponseAgent {
                     });
                 }
                 else {
+                    // ✅ MULTI-TENANT: Passa tenant_id ao criar lead
                     const newLead = await supabaseService.createLead({
                         phone,
                         source: channel === "landing_chat" ? "landing" : "whatsapp",
                         status: "new",
+                        tenant_id: tenantId,
                     });
                     if (newLead) {
                         await emotionService.saveEmotionEvent({
@@ -988,6 +999,29 @@ export class ResponseAgent {
         }
         if (String(opts?.channel || "") === "landing_chat") {
             prompt = buildLandingSystemPrompt(prompt, opts?.meta);
+        }
+        // ✅ SCHEDULER: Buscar horários se cliente tem tool de agendamento
+        if (opts?.clientId && schedulerService.hasSchedulerTool(opts.clientId)) {
+            const schedulingIntent = schedulerService.detectSchedulingIntent(userMessage);
+            if (schedulingIntent.isScheduling && schedulingIntent.wantsToKnowHorarios) {
+                const dataConsulta = schedulingIntent.data || 'hoje';
+                logger.info("Scheduler intent detected", {
+                    clientId: opts.clientId,
+                    data: dataConsulta
+                }, "SCHEDULER");
+                try {
+                    const horariosResult = await schedulerService.consultarHorarios(opts.clientId, dataConsulta);
+                    if (horariosResult.success && horariosResult.horarios) {
+                        prompt += schedulerService.formatHorariosParaPrompt(horariosResult.horarios, dataConsulta);
+                        logger.info("Horários injetados no prompt", {
+                            total: horariosResult.horarios.length
+                        }, "SCHEDULER");
+                    }
+                }
+                catch (err) {
+                    logger.error("Erro ao buscar horários", err, "SCHEDULER");
+                }
+            }
         }
         prompt += `\n\n---\n## 🎭 CONTEXTO ATUAL DA CONVERSA\n`;
         prompt += `**Emoção detectada:** ${String(emotionData.emotion).toUpperCase()}\n`;

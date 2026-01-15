@@ -185,51 +185,55 @@ async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> {
   return res.json();
 }
 
-async function getAgentPrompt(): Promise<string> {
+async function getAgentPrompt(tenantId?: string | null): Promise<string> {
   try {
-    const data = await fetchJson<{ value: string }>("/api/settings?key=agent_prompt");
+    const url = tenantId ? `/api/settings?key=agent_prompt&tenant_id=${tenantId}` : "/api/settings?key=agent_prompt";
+    const data = await fetchJson<{ value: string }>(url);
     return data?.value || "";
   } catch {
     return "";
   }
 }
 
-async function saveAgentPrompt(value: string): Promise<void> {
+async function saveAgentPrompt(value: string, tenantId?: string | null): Promise<void> {
   await fetchJson("/api/settings", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ key: "agent_prompt", value }),
+    body: JSON.stringify({ key: "agent_prompt", value, tenant_id: tenantId }),
   });
 }
 
-async function getKnowledge(): Promise<KnowledgeItem[]> {
+async function getKnowledge(tenantId?: string | null): Promise<KnowledgeItem[]> {
   try {
-    const data = await fetchJson<KnowledgeItem[]>("/api/knowledge");
+    const url = tenantId ? `/api/knowledge?tenant_id=${tenantId}` : "/api/knowledge";
+    const data = await fetchJson<KnowledgeItem[]>(url);
     return Array.isArray(data) ? data : [];
   } catch {
     return [];
   }
 }
 
-async function saveKnowledge(item: KnowledgeItem): Promise<void> {
+async function saveKnowledge(item: KnowledgeItem, tenantId?: string | null): Promise<void> {
   await fetchJson("/api/knowledge", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(item),
+    body: JSON.stringify({ ...item, tenant_id: tenantId }),
   });
 }
 
-async function deleteKnowledge(id: string): Promise<void> {
+async function deleteKnowledge(id: string, tenantId?: string | null): Promise<void> {
   await fetchJson("/api/knowledge", {
     method: "DELETE",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ id }),
+    body: JSON.stringify({ id, tenant_id: tenantId }),
   });
 }
 
 // ============ MAIN COMPONENT ============
 
-export default function TrainingPage() {
+type Props = { tenantId?: string | null };
+
+export default function TrainingPage({ tenantId }: Props) {
   const [tab, setTab] = useState<"prompt" | "knowledge" | "social" | "playground">("prompt");
   const [toast, setToast] = useState<{ type: "success" | "error"; text: string } | null>(null);
 
@@ -306,11 +310,11 @@ export default function TrainingPage() {
   useEffect(() => {
     loadPrompt();
     loadKb();
-  }, []);
+  }, [tenantId]);
 
   async function loadPrompt() {
     setPromptLoading(true);
-    const p = await getAgentPrompt();
+    const p = await getAgentPrompt(tenantId);
     setPrompt(p);
     setPromptOriginal(p);
     setPromptLoading(false);
@@ -318,7 +322,7 @@ export default function TrainingPage() {
 
   async function loadKb() {
     setKbLoading(true);
-    const data = await getKnowledge();
+    const data = await getKnowledge(tenantId);
     setKb(data);
     setKbLoading(false);
   }
@@ -332,7 +336,7 @@ export default function TrainingPage() {
     }
     setPromptSaving(true);
     try {
-      await saveAgentPrompt(prompt);
+      await saveAgentPrompt(prompt, tenantId);
       setPromptOriginal(prompt);
       showToast("success", "Prompt salvo!");
     } catch {
@@ -377,7 +381,7 @@ export default function TrainingPage() {
     }
     setKbSaving(true);
     try {
-      await saveKnowledge(item);
+      await saveKnowledge(item, tenantId);
       showToast("success", item.id ? "Atualizado!" : "Adicionado!");
       setKbModal(false);
       setKbEditing(null);
@@ -391,7 +395,7 @@ export default function TrainingPage() {
   async function handleDeleteKb(id: string) {
     if (!confirm("Remover este item?")) return;
     try {
-      await deleteKnowledge(id);
+      await deleteKnowledge(id, tenantId);
       showToast("success", "Removido!");
       await loadKb();
     } catch {
@@ -430,7 +434,7 @@ export default function TrainingPage() {
               category: item.category || null,
               priority: item.priority || 3,
               tags: item.tags || [],
-            });
+            }, tenantId);
             imported++;
           }
         }

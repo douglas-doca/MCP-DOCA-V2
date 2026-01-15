@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Building2, Plus, Pencil, Phone, Settings, MapPin, Briefcase, Search, X, Check, Loader2, Power } from "lucide-react";
+import { Building2, Plus, Pencil, Phone, Settings, MapPin, Briefcase, Search, X, Check, Loader2, Power, CheckCircle2 } from "lucide-react";
 
 type Tenant = {
   id: string;
@@ -16,9 +16,11 @@ const API_BASE = "/api";
 
 type TenantsPageProps = {
   onConfigure?: (tenantId: string) => void;
+  selectedTenantId?: string | null;
+  onSelectTenant?: (tenantId: string | null) => void;
 };
 
-export default function TenantsPage({ onConfigure }: TenantsPageProps) {
+export default function TenantsPage({ onConfigure, selectedTenantId, onSelectTenant }: TenantsPageProps) {
   const [tenants, setTenants] = useState<Tenant[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
@@ -69,7 +71,8 @@ export default function TenantsPage({ onConfigure }: TenantsPageProps) {
     setModalOpen(true);
   };
 
-  const openEditModal = (tenant: Tenant) => {
+  const openEditModal = (tenant: Tenant, e: React.MouseEvent) => {
+    e.stopPropagation(); // Evita selecionar ao editar
     setEditingTenant(tenant);
     setFormName(tenant.name);
     setFormSlug(tenant.slug);
@@ -105,7 +108,8 @@ export default function TenantsPage({ onConfigure }: TenantsPageProps) {
     }
   };
 
-  const toggleActive = async (tenant: Tenant) => {
+  const toggleActive = async (tenant: Tenant, e: React.MouseEvent) => {
+    e.stopPropagation(); // Evita selecionar ao toggle
     try {
       await fetch(`${API_BASE}/tenants?id=${tenant.id}`, {
         method: "PATCH",
@@ -118,12 +122,31 @@ export default function TenantsPage({ onConfigure }: TenantsPageProps) {
     }
   };
 
+  const handleSelectTenant = (tenant: Tenant) => {
+    if (!tenant.active) return; // Não permite selecionar tenant inativo
+    if (onSelectTenant) {
+      // Se já está selecionado, deseleciona (volta para "todos")
+      if (selectedTenantId === tenant.id) {
+        onSelectTenant(null);
+      } else {
+        onSelectTenant(tenant.id);
+      }
+    }
+  };
+
+  const handleConfigClick = (tenantId: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (onConfigure) onConfigure(tenantId);
+  };
+
   const filteredTenants = tenants.filter((t) => {
     if (search && !t.name.toLowerCase().includes(search.toLowerCase()) && !t.slug.toLowerCase().includes(search.toLowerCase())) {
       return false;
     }
     return true;
   });
+
+  const selectedTenant = tenants.find(t => t.id === selectedTenantId);
 
   if (loading) {
     return (
@@ -149,6 +172,32 @@ export default function TenantsPage({ onConfigure }: TenantsPageProps) {
         </button>
       </div>
 
+      {/* Indicador do cliente selecionado */}
+      {onSelectTenant && (
+        <div className="flex items-center gap-3 p-4 rounded-xl border border-white/10 bg-white/[0.02]">
+          <div className="text-sm text-gray-400">Cliente ativo:</div>
+          {selectedTenant ? (
+            <div className="flex items-center gap-2">
+              <div className="h-8 w-8 rounded-lg bg-[#f57f17]/20 flex items-center justify-center">
+                <span className="text-[#f57f17] font-bold text-xs">{selectedTenant.name.substring(0, 2).toUpperCase()}</span>
+              </div>
+              <span className="text-white font-semibold">{selectedTenant.name}</span>
+              <button
+                onClick={() => onSelectTenant(null)}
+                className="ml-2 text-xs text-gray-500 hover:text-white px-2 py-1 rounded-lg bg-white/5 hover:bg-white/10"
+              >
+                Limpar filtro
+              </button>
+            </div>
+          ) : (
+            <span className="text-gray-300">Todos os clientes</span>
+          )}
+          <div className="ml-auto text-xs text-gray-500">
+            Clique em um card para filtrar os dados
+          </div>
+        </div>
+      )}
+
       <div className="relative max-w-md">
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
         <input
@@ -161,68 +210,87 @@ export default function TenantsPage({ onConfigure }: TenantsPageProps) {
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-        {filteredTenants.map((tenant) => (
-          <div key={tenant.id} className={`rounded-2xl border bg-white/[0.02] p-5 transition-all ${tenant.active ? "border-white/10" : "border-red-500/30 opacity-60"}`}>
-            <div className="flex items-start justify-between mb-4">
-              <div className="flex items-center gap-3">
-                <div className="h-12 w-12 rounded-xl bg-[#f57f17]/20 flex items-center justify-center">
-                  <span className="text-[#f57f17] font-bold">{tenant.name.substring(0, 2).toUpperCase()}</span>
+        {filteredTenants.map((tenant) => {
+          const isSelected = selectedTenantId === tenant.id;
+          
+          return (
+            <div
+              key={tenant.id}
+              onClick={() => handleSelectTenant(tenant)}
+              className={`rounded-2xl border bg-white/[0.02] p-5 transition-all ${
+                isSelected 
+                  ? "border-[#f57f17] ring-2 ring-[#f57f17]/30 bg-[#f57f17]/5" 
+                  : tenant.active 
+                    ? "border-white/10 hover:border-[#f57f17]/50 cursor-pointer" 
+                    : "border-red-500/30 opacity-60"
+              }`}
+            >
+              <div className="flex items-start justify-between mb-4">
+                <div className="flex items-center gap-3">
+                  <div className={`h-12 w-12 rounded-xl flex items-center justify-center ${isSelected ? "bg-[#f57f17]/30" : "bg-[#f57f17]/20"}`}>
+                    <span className="text-[#f57f17] font-bold">{tenant.name.substring(0, 2).toUpperCase()}</span>
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <h3 className="font-semibold text-white">{tenant.name}</h3>
+                      {isSelected && (
+                        <CheckCircle2 className="w-4 h-4 text-[#f57f17]" />
+                      )}
+                    </div>
+                    <p className="text-xs text-gray-500">@{tenant.slug}</p>
+                  </div>
                 </div>
-                <div>
-                  <h3 className="font-semibold text-white">{tenant.name}</h3>
-                  <p className="text-xs text-gray-500">@{tenant.slug}</p>
-                </div>
-              </div>
-              <button
-                onClick={() => toggleActive(tenant)}
-                className={`h-8 w-8 rounded-lg flex items-center justify-center transition-all ${tenant.active ? "bg-emerald-500/20 text-emerald-400" : "bg-red-500/20 text-red-400"}`}
-                title={tenant.active ? "Desativar" : "Ativar"}
-              >
-                <Power className="w-4 h-4" />
-              </button>
-            </div>
-            
-            <div className="space-y-2 mb-4">
-              {tenant.specialty && (
-                <div className="flex items-center gap-2 text-sm text-gray-400">
-                  <Briefcase className="w-4 h-4" />
-                  <span>{tenant.specialty}</span>
-                </div>
-              )}
-              {tenant.phone && (
-                <div className="flex items-center gap-2 text-sm text-gray-400">
-                  <Phone className="w-4 h-4" />
-                  <span>{tenant.phone}</span>
-                </div>
-              )}
-              {tenant.address && (
-                <div className="flex items-center gap-2 text-sm text-gray-400">
-                  <MapPin className="w-4 h-4" />
-                  <span className="truncate">{tenant.address}</span>
-                </div>
-              )}
-            </div>
-            
-            <div className="flex gap-2">
-              <button
-                onClick={() => openEditModal(tenant)}
-                className="flex-1 h-9 rounded-lg border border-white/10 bg-white/5 hover:bg-white/10 text-sm text-gray-300 flex items-center justify-center gap-2 transition-all"
-              >
-                <Pencil className="w-4 h-4" />
-                Editar
-              </button>
-              {onConfigure && (
                 <button
-                  onClick={() => onConfigure(tenant.id)}
-                  className="flex-1 h-9 rounded-lg border border-[#f57f17]/30 bg-[#f57f17]/10 hover:bg-[#f57f17]/20 text-sm text-[#f57f17] flex items-center justify-center gap-2 transition-all"
+                  onClick={(e) => toggleActive(tenant, e)}
+                  className={`h-8 w-8 rounded-lg flex items-center justify-center transition-all ${tenant.active ? "bg-emerald-500/20 text-emerald-400" : "bg-red-500/20 text-red-400"}`}
+                  title={tenant.active ? "Desativar" : "Ativar"}
                 >
-                  <Settings className="w-4 h-4" />
-                  Config
+                  <Power className="w-4 h-4" />
                 </button>
-              )}
+              </div>
+              
+              <div className="space-y-2 mb-4">
+                {tenant.specialty && (
+                  <div className="flex items-center gap-2 text-sm text-gray-400">
+                    <Briefcase className="w-4 h-4" />
+                    <span>{tenant.specialty}</span>
+                  </div>
+                )}
+                {tenant.phone && (
+                  <div className="flex items-center gap-2 text-sm text-gray-400">
+                    <Phone className="w-4 h-4" />
+                    <span>{tenant.phone}</span>
+                  </div>
+                )}
+                {tenant.address && (
+                  <div className="flex items-center gap-2 text-sm text-gray-400">
+                    <MapPin className="w-4 h-4" />
+                    <span className="truncate">{tenant.address}</span>
+                  </div>
+                )}
+              </div>
+              
+              <div className="flex gap-2">
+                <button
+                  onClick={(e) => openEditModal(tenant, e)}
+                  className="flex-1 h-9 rounded-lg border border-white/10 bg-white/5 hover:bg-white/10 text-sm text-gray-300 flex items-center justify-center gap-2 transition-all"
+                >
+                  <Pencil className="w-4 h-4" />
+                  Editar
+                </button>
+                {onConfigure && (
+                  <button
+                    onClick={(e) => handleConfigClick(tenant.id, e)}
+                    className="flex-1 h-9 rounded-lg border border-[#f57f17]/30 bg-[#f57f17]/10 hover:bg-[#f57f17]/20 text-sm text-[#f57f17] flex items-center justify-center gap-2 transition-all"
+                  >
+                    <Settings className="w-4 h-4" />
+                    Config
+                  </button>
+                )}
+              </div>
             </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
 
       {modalOpen && (

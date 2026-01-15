@@ -1,18 +1,21 @@
 {
   "id": "doca-agencia",
+  "message_provider": "waha",
   "nome": "DOCA Agência IA",
   "nome_exibicao": "DOCA AI",
   "telefone": "+5519999999999",
   "endereco": "Limeira, SP",
   "especialidade": "Automação com IA para WhatsApp",
   "site": "https://docaperformance.com.br",
-
+  "waha": {
+    "session": "default",
+    "api_url": "http://waha:3000"
+  },
   "horario_funcionamento": {
     "abertura": "09:00",
     "fechamento": "18:00",
     "dias_funcionamento": ["segunda", "terca", "quarta", "quinta", "sexta"]
   },
-
   "servicos": [
     "Automação WhatsApp 24/7",
     "Chatbots com IA",
@@ -20,7 +23,6 @@
     "Gestão de redes sociais",
     "Desenvolvimento de agentes personalizados"
   ],
-
   "personalizacao": {
     "tom": "profissional e inovador",
     "usa_emoji": true,
@@ -35,20 +37,12 @@
       "anexar_imagem": 1500
     }
   },
-
-  "zapi": {
-    "instance_id": "",
-    "token": "",
-    "clientToken": ""
-  },
-
   "ai_config": {
     "provider": "anthropic",
     "model": "claude-sonnet-4-20250514",
     "temperature": 0.7,
     "max_tokens": 1024
   },
-
   "features": {
     "emotion_detection": true,
     "memory_tracking": true,
@@ -56,7 +50,6 @@
     "smart_formatting": true,
     "followup_service": true
   },
-
   "conversation": {
     "message_separator": "|||",
     "max_blocks_per_message": 3,
@@ -64,7 +57,6 @@
     "session_timeout_hours": 24,
     "history_limit": 10
   },
-
   "emotion_mapping": {
     "skeptical": {
       "keywords": ["duvido", "será", "funciona mesmo"],
@@ -83,7 +75,6 @@
       "instruction": "Foque no ROI e valor gerado, não no custo"
     }
   },
-
   "journey_stages": {
     "0": "Primeiro contato",
     "1": "Entender necessidade",

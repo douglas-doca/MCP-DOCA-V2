@@ -56,7 +56,22 @@ export class SupabaseService {
             return null;
         }
     }
+    // ============ Tenant Operations ============
+    // ✅ Buscar tenant_id (UUID) pelo slug (ex: "drhair" -> "61985a43-dcdc-...")
+    async getTenantIdBySlug(slug) {
+        try {
+            const result = await this.request("GET", "tenants", {
+                query: `slug=eq.${slug}&select=id`,
+            });
+            return result?.[0]?.id || null;
+        }
+        catch (error) {
+            logger.error("Error getting tenant by slug", error, "SUPABASE");
+            return null;
+        }
+    }
     // ============ Lead Operations ============
+    // ✅ CORRIGIDO: Agora aceita tenant_id
     async createLead(lead) {
         const id = lead.id || this.generateId();
         const now = new Date().toISOString();
@@ -73,6 +88,10 @@ export class SupabaseService {
             created_at: now,
             updated_at: now,
         };
+        // ✅ Adiciona tenant_id se fornecido
+        if (lead.tenant_id) {
+            data.tenant_id = lead.tenant_id;
+        }
         // Tenta criar
         const result = await this.request("POST", "leads", { body: data });
         // Se criou com sucesso, retorna
@@ -141,12 +160,13 @@ export class SupabaseService {
         return result?.map((r) => this.mapLead(r)) || [];
     }
     // ============ Conversation Operations ============
-    async createConversation(phone, chatId) {
+    // ✅ CORRIGIDO: Agora aceita tenant_id
+    async createConversation(phone, chatId, tenantId) {
         const id = this.generateId();
         const now = new Date().toISOString();
         let lead = await this.getLeadByPhone(phone);
         if (!lead) {
-            lead = await this.createLead({ phone });
+            lead = await this.createLead({ phone, tenant_id: tenantId });
         }
         const data = {
             id,
@@ -159,6 +179,10 @@ export class SupabaseService {
             updated_at: now,
             last_message_at: now,
         };
+        // ✅ Adiciona tenant_id se fornecido
+        if (tenantId) {
+            data.tenant_id = tenantId;
+        }
         const result = await this.request("POST", "conversations", { body: data });
         if (!result?.[0])
             return null;
@@ -192,10 +216,11 @@ export class SupabaseService {
         const messages = await this.getMessagesByConversation(result[0].id);
         return this.mapConversation(result[0], messages);
     }
-    async getOrCreateConversation(phone, chatId) {
+    // ✅ CORRIGIDO: Agora aceita tenant_id
+    async getOrCreateConversation(phone, chatId, tenantId) {
         let conversation = await this.getConversationByPhone(phone);
         if (!conversation) {
-            conversation = await this.createConversation(phone, chatId);
+            conversation = await this.createConversation(phone, chatId, tenantId);
         }
         if (!conversation) {
             throw new Error("Supabase: Failed to getOrCreateConversation");
@@ -383,16 +408,20 @@ export class SupabaseService {
         const result = await this.request("GET", "leads", { query });
         return result || [];
     }
-    async getDashboardStats() {
-        const leads = await this.request("GET", "leads", {
-            query: "select=id,status",
-        });
-        const conversations = await this.request("GET", "conversations", {
-            query: "select=id,status",
-        });
-        const messages = await this.request("GET", "messages", {
-            query: "select=id",
-        });
+    // ✅ CORRIGIDO: Agora aceita tenantId para filtrar por cliente
+    async getDashboardStats(tenantId) {
+        let leadsQuery = "select=id,status";
+        let conversationsQuery = "select=id,status";
+        let messagesQuery = "select=id";
+        // ✅ Filtrar por tenant se especificado
+        if (tenantId) {
+            leadsQuery += `&tenant_id=eq.${tenantId}`;
+            conversationsQuery += `&tenant_id=eq.${tenantId}`;
+            messagesQuery += `&tenant_id=eq.${tenantId}`;
+        }
+        const leads = await this.request("GET", "leads", { query: leadsQuery });
+        const conversations = await this.request("GET", "conversations", { query: conversationsQuery });
+        const messages = await this.request("GET", "messages", { query: messagesQuery });
         const leadsByStatus = {};
         const conversationsByStatus = {};
         leads?.forEach((l) => {
