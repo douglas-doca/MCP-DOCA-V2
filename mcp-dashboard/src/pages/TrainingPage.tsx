@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import {
   Brain,
   Save,
@@ -11,17 +11,13 @@ import {
   Loader2,
   CheckCircle2,
   XCircle,
-  ChevronDown,
   Upload,
   Download,
   FileText,
   Sparkles,
-  Copy,
-  Play,
   MessageSquare,
   Zap,
   Target,
-  Users,
   TrendingUp,
   X,
   Edit3,
@@ -67,7 +63,7 @@ type SocialProof = {
   author?: string;
   company?: string;
   result?: string;
-  image?: string; // URL da imagem
+  image?: string;
   active: boolean;
   created_at?: string;
 };
@@ -229,6 +225,34 @@ async function deleteKnowledge(id: string, tenantId?: string | null): Promise<vo
   });
 }
 
+// ============ SOCIAL PROOFS API ============
+
+async function getSocialProofs(tenantId?: string | null): Promise<SocialProof[]> {
+  try {
+    const url = tenantId ? `/api/social-proofs?tenant_id=${tenantId}` : "/api/social-proofs";
+    const data = await fetchJson<SocialProof[]>(url);
+    return Array.isArray(data) ? data : [];
+  } catch {
+    return [];
+  }
+}
+
+async function saveSocialProof(item: SocialProof, tenantId?: string | null): Promise<void> {
+  await fetchJson("/api/social-proofs", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ ...item, tenant_id: tenantId }),
+  });
+}
+
+async function deleteSocialProof(id: string, tenantId?: string | null): Promise<void> {
+  await fetchJson("/api/social-proofs", {
+    method: "DELETE",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ id, tenant_id: tenantId }),
+  });
+}
+
 // ============ MAIN COMPONENT ============
 
 type Props = { tenantId?: string | null };
@@ -255,40 +279,8 @@ export default function TrainingPage({ tenantId }: Props) {
   const [importModal, setImportModal] = useState(false);
 
   // Social Proof state
-  const [socialProofs, setSocialProofs] = useState<SocialProof[]>([
-    {
-      id: "sp-1",
-      type: "depoimento",
-      title: "Atendimento 24/7",
-      content: "Depois que implementamos a DOCA, nosso atendimento nunca mais parou. Os clientes adoram a rapidez!",
-      author: "Maria Silva",
-      company: "Clínica Estética",
-      image: "https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=150&h=150&fit=crop&crop=face",
-      active: true,
-      created_at: new Date().toISOString(),
-    },
-    {
-      id: "sp-2",
-      type: "case",
-      title: "Aumento de 40% em conversões",
-      content: "Restaurante que triplicou pedidos pelo WhatsApp usando IA para atendimento automático.",
-      result: "+40% conversão em 30 dias",
-      company: "Pizzaria Napolitana",
-      image: "https://images.unsplash.com/photo-1565299624946-b28f40a0ae38?w=300&h=200&fit=crop",
-      active: true,
-      created_at: new Date().toISOString(),
-    },
-    {
-      id: "sp-3",
-      type: "metrica",
-      title: "Tempo de resposta",
-      content: "Média de 8 segundos para primeira resposta, contra 15 minutos do atendimento manual.",
-      result: "8s vs 15min",
-      image: "https://images.unsplash.com/photo-1551288049-bebda4e38f71?w=300&h=200&fit=crop",
-      active: true,
-      created_at: new Date().toISOString(),
-    },
-  ]);
+  const [socialProofs, setSocialProofs] = useState<SocialProof[]>([]);
+  const [socialLoading, setSocialLoading] = useState(true);
   const [socialModal, setSocialModal] = useState(false);
   const [socialEditing, setSocialEditing] = useState<SocialProof | null>(null);
   const [socialSaving, setSocialSaving] = useState(false);
@@ -296,7 +288,6 @@ export default function TrainingPage({ tenantId }: Props) {
 
   // Playground state
   const [playInput, setPlayInput] = useState("");
-  const [playOutput, setPlayOutput] = useState("");
   const [playLoading, setPlayLoading] = useState(false);
   const [playHistory, setPlayHistory] = useState<{ role: "user" | "ai"; text: string }[]>([]);
 
@@ -310,6 +301,7 @@ export default function TrainingPage({ tenantId }: Props) {
   useEffect(() => {
     loadPrompt();
     loadKb();
+    loadSocialProofs();
   }, [tenantId]);
 
   async function loadPrompt() {
@@ -325,6 +317,13 @@ export default function TrainingPage({ tenantId }: Props) {
     const data = await getKnowledge(tenantId);
     setKb(data);
     setKbLoading(false);
+  }
+
+  async function loadSocialProofs() {
+    setSocialLoading(true);
+    const data = await getSocialProofs(tenantId);
+    setSocialProofs(data);
+    setSocialLoading(false);
   }
 
   // ============ PROMPT ACTIONS ============
@@ -403,10 +402,50 @@ export default function TrainingPage({ tenantId }: Props) {
     }
   }
 
+  // ============ SOCIAL PROOF ACTIONS ============
+
+  async function handleToggleSocialActive(item: SocialProof) {
+    try {
+      await saveSocialProof({ ...item, active: !item.active }, tenantId);
+      await loadSocialProofs();
+    } catch {
+      showToast("error", "Erro ao atualizar");
+    }
+  }
+
+  async function handleDeleteSocial(id: string) {
+    if (!confirm("Remover este item?")) return;
+    try {
+      await deleteSocialProof(id, tenantId);
+      showToast("success", "Removido!");
+      await loadSocialProofs();
+    } catch {
+      showToast("error", "Erro ao remover");
+    }
+  }
+
+  async function handleSaveSocial(item: SocialProof) {
+    if (!item.title?.trim() || !item.content?.trim()) {
+      showToast("error", "Título e conteúdo obrigatórios");
+      return;
+    }
+    setSocialSaving(true);
+    try {
+      await saveSocialProof(item, tenantId);
+      showToast("success", item.id ? "Atualizado!" : "Adicionado!");
+      setSocialModal(false);
+      setSocialEditing(null);
+      await loadSocialProofs();
+    } catch {
+      showToast("error", "Erro ao salvar");
+    }
+    setSocialSaving(false);
+  }
+
   // ============ IMPORT/EXPORT ============
 
   function handleExportKb() {
-    const data = kb.map(({ id, question, answer, category, priority, tags }) => ({
+    const data = kb.map(({ question, answer, category, priority, tags }) => ({
       question, answer, category, priority, tags
     }));
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
@@ -418,7 +457,7 @@ export default function TrainingPage({ tenantId }: Props) {
     showToast("success", "Exportado!");
   }
 
-  function handleImportKb(file: File) {
+  async function handleImportKb(file: File) {
     const reader = new FileReader();
     reader.onload = async (e) => {
       try {
@@ -456,7 +495,6 @@ export default function TrainingPage({ tenantId }: Props) {
     setPlayLoading(true);
     setPlayHistory(prev => [...prev, { role: "user", text: playInput }]);
     
-    // Simula busca na KB + resposta
     await new Promise(r => setTimeout(r, 800));
     
     const q = playInput.toLowerCase();
@@ -477,7 +515,6 @@ export default function TrainingPage({ tenantId }: Props) {
     }
     
     setPlayHistory(prev => [...prev, { role: "ai", text: response }]);
-    setPlayOutput(response);
     setPlayInput("");
     setPlayLoading(false);
   }
@@ -508,7 +545,7 @@ export default function TrainingPage({ tenantId }: Props) {
           ].map(t => (
             <button
               key={t.key}
-              onClick={() => setTab(t.key as any)}
+              onClick={() => setTab(t.key as typeof tab)}
               className={`h-10 px-4 rounded-xl flex items-center gap-2 text-sm font-medium transition ${
                 tab === t.key
                   ? "bg-[#f57f17]/20 border border-[#f57f17]/30 text-white"
@@ -525,15 +562,17 @@ export default function TrainingPage({ tenantId }: Props) {
       {/* PROMPT TAB */}
       {tab === "prompt" && (
         <div className="space-y-6">
-          {/* Stats */}
           <div className="grid grid-cols-3 gap-4">
             <StatCard icon={FileText} label="Caracteres" value={prompt.length.toLocaleString()} />
             <StatCard icon={Target} label="Linhas" value={prompt.split("\n").length} />
-            <StatCard icon={Clock} label="Status" value={prompt === promptOriginal ? "Salvo" : "Alterado"} 
-              color={prompt === promptOriginal ? "text-emerald-400" : "text-yellow-400"} />
+            <StatCard 
+              icon={Clock} 
+              label="Status" 
+              value={prompt === promptOriginal ? "Salvo" : "Alterado"} 
+              color={prompt === promptOriginal ? "text-emerald-400" : "text-yellow-400"} 
+            />
           </div>
 
-          {/* Editor */}
           <div className="rounded-[28px] border border-white/10 bg-white/5 p-6">
             <div className="flex items-center justify-between mb-4">
               <div>
@@ -592,14 +631,12 @@ export default function TrainingPage({ tenantId }: Props) {
       {/* KNOWLEDGE TAB */}
       {tab === "knowledge" && (
         <div className="space-y-6">
-          {/* Stats */}
           <div className="grid grid-cols-3 gap-4">
             <StatCard icon={BookOpen} label="Total de FAQs" value={kbStats.total} />
             <StatCard icon={BarChart3} label="Categorias" value={kbStats.categories} />
             <StatCard icon={Target} label="Prioridade Média" value={kbStats.avgPriority} />
           </div>
 
-          {/* Actions */}
           <div className="flex items-center justify-between flex-wrap gap-4">
             <div className="flex items-center gap-3">
               <div className="relative">
@@ -649,7 +686,6 @@ export default function TrainingPage({ tenantId }: Props) {
             </div>
           </div>
 
-          {/* List */}
           <div className="rounded-[28px] border border-white/10 bg-white/5 overflow-hidden">
             {kbLoading ? (
               <div className="h-64 flex items-center justify-center">
@@ -708,7 +744,6 @@ export default function TrainingPage({ tenantId }: Props) {
       {/* SOCIAL PROOF TAB */}
       {tab === "social" && (
         <div className="space-y-6">
-          {/* Stats */}
           <div className="grid grid-cols-4 gap-4">
             <StatCard icon={Star} label="Total" value={socialProofs.length} />
             <StatCard icon={Quote} label="Depoimentos" value={socialProofs.filter(s => s.type === "depoimento").length} />
@@ -716,7 +751,6 @@ export default function TrainingPage({ tenantId }: Props) {
             <StatCard icon={TrendingUp} label="Métricas" value={socialProofs.filter(s => s.type === "metrica").length} />
           </div>
 
-          {/* Info */}
           <div className="rounded-[28px] border border-[#f57f17]/20 bg-[#f57f17]/5 p-5">
             <div className="flex items-start gap-3">
               <Sparkles className="w-5 h-5 text-[#f57f17] mt-0.5" />
@@ -730,7 +764,6 @@ export default function TrainingPage({ tenantId }: Props) {
             </div>
           </div>
 
-          {/* Toolbar */}
           <div className="flex items-center justify-between gap-4 flex-wrap">
             <div className="flex items-center gap-2">
               {(["all", "depoimento", "case", "metrica"] as const).map(f => (
@@ -757,126 +790,121 @@ export default function TrainingPage({ tenantId }: Props) {
             </button>
           </div>
 
-          {/* List */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {socialProofs
-              .filter(s => socialFilter === "all" || s.type === socialFilter)
-              .map(item => (
-                <div
-                  key={item.id}
-                  className={`rounded-[20px] border overflow-hidden transition ${
-                    item.active
-                      ? "border-white/10 bg-white/5"
-                      : "border-white/5 bg-white/[0.02] opacity-50"
-                  }`}
-                >
-                  {/* Imagem do case/métrica (horizontal no topo) */}
-                  {item.image && item.type !== "depoimento" && (
-                    <div className="h-32 w-full overflow-hidden bg-black/20">
-                      <img 
-                        src={item.image} 
-                        alt={item.title}
-                        className="w-full h-full object-cover"
-                      />
-                    </div>
-                  )}
+          {socialLoading ? (
+            <div className="h-64 flex items-center justify-center">
+              <Loader2 className="w-6 h-6 text-gray-500 animate-spin" />
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {socialProofs
+                .filter(s => socialFilter === "all" || s.type === socialFilter)
+                .map(item => (
+                  <div
+                    key={item.id}
+                    className={`rounded-[20px] border overflow-hidden transition ${
+                      item.active
+                        ? "border-white/10 bg-white/5"
+                        : "border-white/5 bg-white/[0.02] opacity-50"
+                    }`}
+                  >
+                    {item.image && item.type !== "depoimento" && (
+                      <div className="h-32 w-full overflow-hidden bg-black/20">
+                        <img 
+                          src={item.image} 
+                          alt={item.title}
+                          className="w-full h-full object-cover"
+                        />
+                      </div>
+                    )}
 
-                  <div className="p-5">
-                    <div className="flex items-start gap-4">
-                      {/* Foto do autor (depoimento) - circular */}
-                      {item.type === "depoimento" && (
-                        <div className="flex-shrink-0">
-                          {item.image ? (
-                            <img 
-                              src={item.image} 
-                              alt={item.author || "Cliente"}
-                              className="w-14 h-14 rounded-full object-cover border-2 border-white/10"
-                            />
+                    <div className="p-5">
+                      <div className="flex items-start gap-4">
+                        {item.type === "depoimento" && (
+                          <div className="flex-shrink-0">
+                            {item.image ? (
+                              <img 
+                                src={item.image} 
+                                alt={item.author || "Cliente"}
+                                className="w-14 h-14 rounded-full object-cover border-2 border-white/10"
+                              />
+                            ) : (
+                              <div className="w-14 h-14 rounded-full bg-purple-500/20 border-2 border-purple-500/30 flex items-center justify-center">
+                                <User className="w-6 h-6 text-purple-400" />
+                              </div>
+                            )}
+                          </div>
+                        )}
+
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 mb-2">
+                            <span className={`text-xs px-2 py-0.5 rounded-full ${
+                              item.type === "depoimento" ? "bg-purple-500/20 text-purple-300" :
+                              item.type === "case" ? "bg-emerald-500/20 text-emerald-300" :
+                              "bg-blue-500/20 text-blue-300"
+                            }`}>
+                              {item.type === "depoimento" ? "Depoimento" : item.type === "case" ? "Case" : "Métrica"}
+                            </span>
+                            {!item.active && (
+                              <span className="text-xs text-gray-500">Inativo</span>
+                            )}
+                          </div>
+
+                          <h4 className="text-white font-semibold">{item.title}</h4>
+                          
+                          {item.type === "depoimento" ? (
+                            <p className="text-sm text-gray-300 mt-2 italic">"{item.content}"</p>
                           ) : (
-                            <div className="w-14 h-14 rounded-full bg-purple-500/20 border-2 border-purple-500/30 flex items-center justify-center">
-                              <User className="w-6 h-6 text-purple-400" />
+                            <p className="text-sm text-gray-400 mt-1 line-clamp-2">{item.content}</p>
+                          )}
+
+                          {(item.author || item.company) && (
+                            <p className="text-xs text-gray-500 mt-2">
+                              {item.author && <span className="font-medium text-gray-400">{item.author}</span>}
+                              {item.author && item.company && <span> • </span>}
+                              {item.company && <span>{item.company}</span>}
+                            </p>
+                          )}
+
+                          {item.result && (
+                            <div className="mt-3 inline-block px-3 py-1.5 rounded-lg bg-emerald-500/10 border border-emerald-500/20">
+                              <span className="text-sm text-emerald-300 font-bold">{item.result}</span>
                             </div>
                           )}
                         </div>
-                      )}
 
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2 mb-2">
-                          <span className={`text-xs px-2 py-0.5 rounded-full ${
-                            item.type === "depoimento" ? "bg-purple-500/20 text-purple-300" :
-                            item.type === "case" ? "bg-emerald-500/20 text-emerald-300" :
-                            "bg-blue-500/20 text-blue-300"
-                          }`}>
-                            {item.type === "depoimento" ? "Depoimento" : item.type === "case" ? "Case" : "Métrica"}
-                          </span>
-                          {!item.active && (
-                            <span className="text-xs text-gray-500">Inativo</span>
-                          )}
+                        <div className="flex flex-col gap-2 flex-shrink-0">
+                          <button 
+                            onClick={() => handleToggleSocialActive(item)}
+                            className="h-8 w-8 rounded-lg bg-white/5 hover:bg-white/10 flex items-center justify-center"
+                            title={item.active ? "Desativar" : "Ativar"}
+                          >
+                            {item.active ? (
+                              <ToggleRight className="w-4 h-4 text-emerald-400" />
+                            ) : (
+                              <ToggleLeft className="w-4 h-4 text-gray-500" />
+                            )}
+                          </button>
+                          <button
+                            onClick={() => { setSocialEditing(item); setSocialModal(true); }}
+                            className="h-8 w-8 rounded-lg bg-white/5 hover:bg-white/10 flex items-center justify-center"
+                          >
+                            <Edit3 className="w-4 h-4 text-gray-400" />
+                          </button>
+                          <button
+                            onClick={() => handleDeleteSocial(item.id)}
+                            className="h-8 w-8 rounded-lg bg-white/5 hover:bg-red-500/10 flex items-center justify-center"
+                          >
+                            <Trash2 className="w-4 h-4 text-red-400" />
+                          </button>
                         </div>
-
-                        <h4 className="text-white font-semibold">{item.title}</h4>
-                        
-                        {item.type === "depoimento" ? (
-                          <p className="text-sm text-gray-300 mt-2 italic">"{item.content}"</p>
-                        ) : (
-                          <p className="text-sm text-gray-400 mt-1 line-clamp-2">{item.content}</p>
-                        )}
-
-                        {(item.author || item.company) && (
-                          <p className="text-xs text-gray-500 mt-2">
-                            {item.author && <span className="font-medium text-gray-400">{item.author}</span>}
-                            {item.author && item.company && <span> • </span>}
-                            {item.company && <span>{item.company}</span>}
-                          </p>
-                        )}
-
-                        {item.result && (
-                          <div className="mt-3 inline-block px-3 py-1.5 rounded-lg bg-emerald-500/10 border border-emerald-500/20">
-                            <span className="text-sm text-emerald-300 font-bold">{item.result}</span>
-                          </div>
-                        )}
-                      </div>
-
-                      <div className="flex flex-col gap-2 flex-shrink-0">
-                        <button
-                          onClick={() => {
-                            setSocialProofs(prev => prev.map(s => 
-                              s.id === item.id ? { ...s, active: !s.active } : s
-                            ));
-                          }}
-                          className="h-8 w-8 rounded-lg bg-white/5 hover:bg-white/10 flex items-center justify-center"
-                          title={item.active ? "Desativar" : "Ativar"}
-                        >
-                          {item.active ? (
-                            <ToggleRight className="w-4 h-4 text-emerald-400" />
-                          ) : (
-                            <ToggleLeft className="w-4 h-4 text-gray-500" />
-                          )}
-                        </button>
-                        <button
-                          onClick={() => { setSocialEditing(item); setSocialModal(true); }}
-                          className="h-8 w-8 rounded-lg bg-white/5 hover:bg-white/10 flex items-center justify-center"
-                        >
-                          <Edit3 className="w-4 h-4 text-gray-400" />
-                        </button>
-                        <button
-                          onClick={() => {
-                            if (confirm("Remover este item?")) {
-                              setSocialProofs(prev => prev.filter(s => s.id !== item.id));
-                            }
-                          }}
-                          className="h-8 w-8 rounded-lg bg-white/5 hover:bg-red-500/10 flex items-center justify-center"
-                        >
-                          <Trash2 className="w-4 h-4 text-red-400" />
-                        </button>
                       </div>
                     </div>
                   </div>
-                </div>
-              ))}
-          </div>
+                ))}
+            </div>
+          )}
 
-          {socialProofs.filter(s => socialFilter === "all" || s.type === socialFilter).length === 0 && (
+          {socialProofs.filter(s => socialFilter === "all" || s.type === socialFilter).length === 0 && !socialLoading && (
             <div className="text-center py-12 text-gray-500">
               <Star className="w-8 h-8 mx-auto mb-2 opacity-50" />
               <p>Nenhuma prova social encontrada</p>
@@ -888,7 +916,6 @@ export default function TrainingPage({ tenantId }: Props) {
       {/* PLAYGROUND TAB */}
       {tab === "playground" && (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          {/* Chat */}
           <div className="rounded-[28px] border border-white/10 bg-white/5 flex flex-col h-[600px]">
             <div className="p-4 border-b border-white/10">
               <h3 className="text-white font-bold flex items-center gap-2">
@@ -898,7 +925,6 @@ export default function TrainingPage({ tenantId }: Props) {
               <p className="text-gray-500 text-sm">Simule conversas para validar respostas</p>
             </div>
 
-            {/* Messages */}
             <div className="flex-1 overflow-y-auto p-4 space-y-3">
               {playHistory.length === 0 ? (
                 <div className="h-full flex flex-col items-center justify-center text-gray-500">
@@ -927,7 +953,6 @@ export default function TrainingPage({ tenantId }: Props) {
               )}
             </div>
 
-            {/* Input */}
             <div className="p-4 border-t border-white/10">
               <div className="flex gap-2">
                 <input
@@ -954,7 +979,6 @@ export default function TrainingPage({ tenantId }: Props) {
             </div>
           </div>
 
-          {/* Info Panel */}
           <div className="space-y-6">
             <div className="rounded-[28px] border border-white/10 bg-white/5 p-6">
               <h3 className="text-white font-bold mb-4">Como funciona</h3>
@@ -1068,26 +1092,13 @@ export default function TrainingPage({ tenantId }: Props) {
           item={socialEditing}
           saving={socialSaving}
           onClose={() => { setSocialModal(false); setSocialEditing(null); }}
-          onSave={(item) => {
-            setSocialSaving(true);
-            setTimeout(() => {
-              if (item.id) {
-                setSocialProofs(prev => prev.map(s => s.id === item.id ? item : s));
-              } else {
-                setSocialProofs(prev => [...prev, { ...item, id: `sp-${Date.now()}`, created_at: new Date().toISOString() }]);
-              }
-              setSocialModal(false);
-              setSocialEditing(null);
-              setSocialSaving(false);
-              showToast("success", item.id ? "Atualizado!" : "Adicionado!");
-            }, 300);
-          }}
+          onSave={handleSaveSocial}
         />
       )}
 
       {/* Toast */}
       {toast && (
-        <div className={`fixed bottom-4 right-4 px-4 py-3 rounded-xl flex items-center gap-2 ${
+        <div className={`fixed bottom-4 right-4 px-4 py-3 rounded-xl flex items-center gap-2 z-50 ${
           toast.type === "success" ? "bg-emerald-500/20 border border-emerald-500/30 text-emerald-300" :
           "bg-red-500/20 border border-red-500/30 text-red-300"
         }`}>
@@ -1101,7 +1112,7 @@ export default function TrainingPage({ tenantId }: Props) {
 
 // ============ COMPONENTS ============
 
-function StatCard({ icon: Icon, label, value, color }: { icon: any; label: string; value: any; color?: string }) {
+function StatCard({ icon: Icon, label, value, color }: { icon: React.ElementType; label: string; value: string | number; color?: string }) {
   return (
     <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
       <div className="flex items-center gap-2 mb-1">
@@ -1255,7 +1266,6 @@ function SocialProofModal({ item, saving, onClose, onSave }: {
         </div>
 
         <div className="space-y-4">
-          {/* Tipo */}
           <div>
             <label className="text-xs text-gray-500 mb-2 block">Tipo</label>
             <div className="flex gap-2">
@@ -1281,7 +1291,6 @@ function SocialProofModal({ item, saving, onClose, onSave }: {
             </div>
           </div>
 
-          {/* Imagem */}
           <div>
             <label className="text-xs text-gray-500 mb-2 block">
               {type === "depoimento" ? "Foto do Cliente" : "Imagem/Print"}
@@ -1302,7 +1311,6 @@ function SocialProofModal({ item, saving, onClose, onSave }: {
                 </p>
               </div>
               
-              {/* Preview */}
               <div className={`flex-shrink-0 ${type === "depoimento" ? "w-16 h-16" : "w-24 h-16"} rounded-xl border border-white/10 bg-black/30 overflow-hidden flex items-center justify-center`}>
                 {image ? (
                   <img 
@@ -1320,7 +1328,6 @@ function SocialProofModal({ item, saving, onClose, onSave }: {
             </div>
           </div>
 
-          {/* Título */}
           <div>
             <label className="text-xs text-gray-500">Título</label>
             <input
@@ -1331,7 +1338,6 @@ function SocialProofModal({ item, saving, onClose, onSave }: {
             />
           </div>
 
-          {/* Conteúdo */}
           <div>
             <label className="text-xs text-gray-500">
               {type === "depoimento" ? "Depoimento" : type === "case" ? "Descrição do Case" : "Descrição da Métrica"}
@@ -1350,7 +1356,6 @@ function SocialProofModal({ item, saving, onClose, onSave }: {
             />
           </div>
 
-          {/* Campos condicionais */}
           <div className="grid grid-cols-2 gap-4">
             {type === "depoimento" && (
               <div>
@@ -1387,7 +1392,6 @@ function SocialProofModal({ item, saving, onClose, onSave }: {
             )}
           </div>
 
-          {/* Ativo */}
           <div className="flex items-center justify-between p-4 rounded-xl bg-white/5 border border-white/10">
             <div>
               <p className="text-sm text-white font-medium">Ativo</p>
@@ -1409,7 +1413,7 @@ function SocialProofModal({ item, saving, onClose, onSave }: {
           </button>
           <button
             onClick={() => onSave({
-              id: item?.id || "",
+              id: item?.id || `sp-${Date.now()}`,
               type,
               title,
               content,
@@ -1418,7 +1422,7 @@ function SocialProofModal({ item, saving, onClose, onSave }: {
               result: result || undefined,
               image: image || undefined,
               active,
-              created_at: item?.created_at,
+              created_at: item?.created_at || new Date().toISOString(),
             })}
             disabled={saving || !title.trim() || !content.trim()}
             className="h-10 px-4 rounded-xl bg-gradient-to-r from-[#f57f17] to-[#ff9800] text-sm font-semibold text-white disabled:opacity-50 flex items-center gap-2"

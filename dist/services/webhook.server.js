@@ -84,14 +84,16 @@ async function getSetting(key) {
         return result[0];
     return null;
 }
-async function upsertSetting(key, value) {
+async function upsertSetting(key, value, tenantId) {
     const now = new Date().toISOString();
+    // Query com tenant_id
+    const tenantFilter = tenantId ? `key=eq.${key}&tenant_id=eq.${tenantId}` : `key=eq.${key}&tenant_id=is.null`;
     const existing = await supabaseService.request("GET", "settings", {
-        query: `key=eq.${key}`,
+        query: tenantFilter,
     });
     if (existing && existing.length > 0) {
         const patched = await supabaseService.request("PATCH", "settings", {
-            query: `key=eq.${key}`,
+            query: tenantFilter,
             body: { value, updated_at: now },
         });
         return !!patched;
@@ -100,6 +102,7 @@ async function upsertSetting(key, value) {
         body: {
             key,
             value,
+            tenant_id: tenantId || null,
             created_at: now,
             updated_at: now,
         },
@@ -242,6 +245,10 @@ export class WebhookServer {
         this.addRoute("GET", "/api/knowledge", this.handleAPIGetKnowledge.bind(this));
         this.addRoute("POST", "/api/knowledge", this.handleAPISaveKnowledge.bind(this));
         this.addRoute("DELETE", "/api/knowledge", this.handleAPIDeleteKnowledge.bind(this));
+        // ========= Social Proofs =========
+        this.addRoute("GET", "/api/social-proofs", this.handleAPIGetSocialProofs.bind(this));
+        this.addRoute("POST", "/api/social-proofs", this.handleAPISaveSocialProof.bind(this));
+        this.addRoute("DELETE", "/api/social-proofs", this.handleAPIDeleteSocialProof.bind(this));
         // ========= Emoção =========
         this.addRoute("GET", "/api/dashboard/metrics", this.handleAPIDashboardMetrics.bind(this));
         this.addRoute("GET", "/api/dashboard/sentiment-matrix", this.handleAPISentimentMatrix.bind(this));
@@ -752,14 +759,18 @@ export class WebhookServer {
         try {
             const url = new URL(req.url, `http://${req.headers.host}`);
             const key = url.searchParams.get("key") || "agent_prompt";
+            const tenantId = url.searchParams.get("tenant_id") || null;
+            // Query com tenant_id
+            const tenantFilter = tenantId ? `key=eq.${key}\&tenant_id=eq.${tenantId}` : `key=eq.${key}\&tenant_id=is.null`;
             const result = await supabaseService.request("GET", "settings", {
-                query: `key=eq.${key}`,
+                query: tenantFilter,
             });
             if (result && result[0]) {
-                this.sendJSON(res, 200, { key: result[0].key, value: result[0].value });
+                this.sendJSON(res, 200, { key: result[0].key, value: result[0].value, tenant_id: result[0].tenant_id });
             }
             else {
-                this.sendJSON(res, 404, { error: "Setting not found" });
+                // Retorna null ao invés de 404 para settings não existentes
+                this.sendJSON(res, 200, { key, value: null, tenant_id: tenantId });
             }
         }
         catch (error) {
@@ -769,17 +780,17 @@ export class WebhookServer {
     }
     async handleAPISaveSettings(_req, res, body) {
         try {
-            const { key, value } = JSON.parse(body);
+            const { key, value, tenant_id } = JSON.parse(body);
             if (!key) {
                 this.sendJSON(res, 400, { error: "Key is required" });
                 return;
             }
-            const ok = await upsertSetting(key, value);
+            const ok = await upsertSetting(key, value, tenant_id || null);
             if (!ok) {
                 this.sendJSON(res, 500, { error: "Failed to save setting" });
                 return;
             }
-            this.sendJSON(res, 200, { success: true, key });
+            this.sendJSON(res, 200, { success: true, key, tenant_id: tenant_id || null });
         }
         catch (error) {
             logger.error("Error saving settings", error);
@@ -932,6 +943,66 @@ export class WebhookServer {
         catch (error) {
             logger.error("Error deleting knowledge", error);
             this.sendJSON(res, 500, { error: "Failed to delete knowledge" });
+        }
+    }
+    // ========= Social Proofs Handlers =========
+    async handleAPIGetSocialProofs(req, res) {
+        try {
+            const url = new URL(req.url, `http://${req.headers.host}`);
+            const tenantId = url.searchParams.get("tenant_id");
+            let query = "order=created_at.desc";
+            if (tenantId)
+                query = `tenant_id=eq.${tenantId}&${query}`;
+            const result = await supabaseService.request("GET", "social_proofs", { query });
+            this.sendJSON(res, 200, result || []);
+        }
+        catch (error) {
+            logger.error("Error getting social proofs", error);
+            this.sendJSON(res, 500, { error: "Failed to get social proofs" });
+        }
+    }
+    async handleAPISaveSocialProof(_req, res, body) {
+        try {
+            const data = JSON.parse(body);
+            if (!data.title || !data.content || !data.type) {
+                this.sendJSON(res, 400, { error: "Title, content and type required" });
+                return;
+            }
+            const now = new Date().toISOString();
+            if (data.id) {
+                await supabaseService.request("PATCH", "social_proofs", {
+                    query: `id=eq.${data.id}`,
+                    body: { ...data, updated_at: now },
+                });
+            }
+            else {
+                delete data.id;
+                await supabaseService.request("POST", "social_proofs", {
+                    body: { ...data, created_at: now, updated_at: now },
+                });
+            }
+            this.sendJSON(res, 200, { success: true });
+        }
+        catch (error) {
+            logger.error("Error saving social proof", error);
+            this.sendJSON(res, 500, { error: "Failed to save social proof" });
+        }
+    }
+    async handleAPIDeleteSocialProof(_req, res, body) {
+        try {
+            const { id } = JSON.parse(body);
+            if (!id) {
+                this.sendJSON(res, 400, { error: "ID required" });
+                return;
+            }
+            await supabaseService.request("DELETE", "social_proofs", {
+                query: `id=eq.${id}`,
+            });
+            this.sendJSON(res, 200, { success: true });
+        }
+        catch (error) {
+            logger.error("Error deleting social proof", error);
+            this.sendJSON(res, 500, { error: "Failed to delete social proof" });
         }
     }
     // ============ ✅ Agent Studio APIs ============

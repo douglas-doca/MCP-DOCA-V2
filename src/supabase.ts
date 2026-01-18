@@ -1,8 +1,17 @@
 import { createClient } from "@supabase/supabase-js";
 
-const url = process.env.SUPABASE_URL!;
-const key = process.env.SUPABASE_SERVICE_ROLE_KEY!;
+const url = import.meta.env.VITE_SUPABASE_URL;
+const key = import.meta.env.VITE_SUPABASE_ANON_KEY;
 
-export const supabase = createClient(url, key, {
-  auth: { persistSession: false },
+if (!url || !key) {
+  console.error("❌ Supabase env vars missing!", { url: !!url, key: !!key });
+}
+
+export const supabase = createClient(url || "", key || "", {
+  auth: {
+    persistSession: true,
+    autoRefreshToken: true,
+    detectSessionInUrl: true,
+    storageKey: "doca-auth",
+  },
 });

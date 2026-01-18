@@ -1,5 +1,5 @@
 // src/App.tsx
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useRef } from "react";
 import {
   LayoutDashboard,
   MessageSquare,
@@ -56,6 +56,9 @@ import AgentToggle from "./components/AgentToggle";
 // Tenant Selector (Multi-tenant)
 import TenantSelector from "./components/TenantSelector";
 
+// Tenant Loader
+import TenantLoader, { LoadingStep } from "./components/TenantLoader";
+
 // Demo mode
 import {
   isDemoMode, getDemoKey, getDemoData, getAllDemoOptions } from "./mock";
@@ -111,8 +114,23 @@ export default function App() {
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [leads, setLeads] = useState<Lead[]>([]);
   const [selectedConversation, setSelectedConversation] = useState<Conversation | null>(null);
-  const [selectedTenantId, setSelectedTenantId] = useState<string | null>(null);
+  const [selectedTenantId, setSelectedTenantId] = useState<string | null>(() => {
+    if (typeof window !== "undefined") {
+      return localStorage.getItem("selectedTenantId") || null;
+    }
+    return null;
+  });
   const [configTenantId, setConfigTenantId] = useState<string | null>(null);
+
+  // Persistir tenant selecionado
+  useEffect(() => {
+    if (selectedTenantId) {
+      localStorage.setItem("selectedTenantId", selectedTenantId);
+    } else {
+      localStorage.removeItem("selectedTenantId");
+    }
+  }, [selectedTenantId]);
+
   const [profileMenuOpen, setProfileMenuOpen] = useState(false);
   const [messages, setMessages] = useState<Message[]>([]);
 
@@ -134,9 +152,24 @@ export default function App() {
   // Notificação toast
   const [notification, setNotification] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
 
+  // Tenant Loading State
+  const [tenantLoading, setTenantLoading] = useState(false);
+  const [loadingSteps, setLoadingSteps] = useState<LoadingStep[]>([
+    { id: "config", label: "Configurações", status: "pending" },
+    { id: "integrations", label: "Integrações", status: "pending" },
+    { id: "knowledge", label: "Base de Conhecimento", status: "pending" },
+    { id: "social", label: "Prova Social", status: "pending" },
+    { id: "stats", label: "Estatísticas", status: "pending" },
+  ]);
+  const [loadingProgress, setLoadingProgress] = useState(0);
+  const prevTenantId = useRef<string | null>(
+    typeof window !== "undefined" ? localStorage.getItem("selectedTenantId") : null
+  );
+  const hasInitialized = useRef(false);
+
   const demoMode = isDemoMode();
   const { isAdmin, canManageUsers, canManageTenants, canViewMetrics } = usePermissions();
-  const { profile, tenant: authTenant } = useAuth();
+  const { profile, tenant: authTenant, availableTenants } = useAuth();
 
   // Auto-selecionar tenant para managers (não-admins)
   useEffect(() => {
@@ -144,6 +177,71 @@ export default function App() {
       setSelectedTenantId(authTenant.id);
     }
   }, [isAdmin, authTenant, selectedTenantId]);
+
+  // Auto-selecionar DOCA como default para super_admin
+  useEffect(() => {
+    if (isAdmin && !selectedTenantId && availableTenants?.length > 0) {
+      const docaTenant = availableTenants.find(t => t.slug === "doca");
+      if (docaTenant) {
+        setSelectedTenantId(docaTenant.id);
+      } else {
+        setSelectedTenantId(availableTenants[0].id);
+      }
+    }
+  }, [isAdmin, selectedTenantId, availableTenants]);
+
+  // Tenant Loader ao trocar de cliente (só em troca real)
+  useEffect(() => {
+    // Primeira inicialização - não mostra loader
+    if (!hasInitialized.current) {
+      hasInitialized.current = true;
+      prevTenantId.current = selectedTenantId;
+      return;
+    }
+    
+    // Ignora se não mudou
+    if (prevTenantId.current === selectedTenantId) return;
+    
+    // Guarda anterior antes de atualizar
+    const previousId = prevTenantId.current;
+    prevTenantId.current = selectedTenantId;
+    
+    // Só mostra loader se tinha tenant antes E tem novo (troca real)
+    if (!previousId || !selectedTenantId) return;
+
+    // Mostra loader
+    setTenantLoading(true);
+    setLoadingProgress(0);
+    setLoadingSteps([
+      { id: "config", label: "Configurações", status: "pending" },
+      { id: "integrations", label: "Integrações", status: "pending" },
+      { id: "knowledge", label: "Base de Conhecimento", status: "pending" },
+      { id: "social", label: "Prova Social", status: "pending" },
+      { id: "stats", label: "Estatísticas", status: "pending" },
+    ]);
+
+    const steps = ["config", "integrations", "knowledge", "social", "stats"];
+    let currentStep = 0;
+
+    const interval = setInterval(() => {
+      if (currentStep < steps.length) {
+        setLoadingSteps(prev => prev.map((s, i) => ({
+          ...s,
+          status: i < currentStep ? "done" : i === currentStep ? "loading" : "pending"
+        })));
+        setLoadingProgress((currentStep + 1) * 20);
+        currentStep++;
+      } else {
+        setLoadingSteps(prev => prev.map(s => ({ ...s, status: "done" as const })));
+        setLoadingProgress(100);
+        clearInterval(interval);
+        setTimeout(() => setTenantLoading(false), 300);
+      }
+    }, 400);
+
+    return () => clearInterval(interval);
+  }, [selectedTenantId]);
+
   const demoKey = demoMode ? getDemoKey() : "default";
   const demo = demoMode ? getDemoData() : null;
 
@@ -151,6 +249,7 @@ export default function App() {
     () => (demoMode ? getAllDemoOptions() : []),
     [demoMode]
   );
+
   const menuItems: Array<{ id: PageId; label: string; icon: any }> = useMemo(
     () => {
       const base: Array<{ id: PageId; label: string; icon: any }> = [
@@ -263,10 +362,10 @@ export default function App() {
       }
 
       const [statsData, convsData, leadsData] = await Promise.all([
-  getStats(tenantToUse || undefined),  // ← ADICIONAR tenantToUse aqui
-  getConversations(50, tenantToUse || undefined),
-  getLeads(50, tenantToUse || undefined),
-]);
+        getStats(tenantToUse || undefined),
+        getConversations(50, tenantToUse || undefined),
+        getLeads(50, tenantToUse || undefined),
+      ]);
 
       setStats(statsData);
       setConversations(convsData || []);
@@ -439,6 +538,9 @@ export default function App() {
     return "Visão geral do sistema";
   })();
 
+  // Tenant selecionado
+  const selectedTenant = availableTenants.find(t => t.id === selectedTenantId);
+
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-black text-white">
@@ -461,429 +563,441 @@ export default function App() {
     (demoKey ? String(demoKey) : "Demo");
 
   return (
-    <div className="min-h-screen text-white bg-black">
-      {/* Decorative layer */}
-      <div className="pointer-events-none fixed inset-0">
-        <div className="absolute -top-32 left-[-140px] h-[520px] w-[520px] rounded-full bg-[#f57f17]/18 blur-3xl" />
-        <div className="absolute top-12 right-[-220px] h-[560px] w-[560px] rounded-full bg-cyan-500/12 blur-3xl" />
-        <div className="absolute bottom-[-260px] left-[18%] h-[620px] w-[620px] rounded-full bg-emerald-500/10 blur-3xl" />
-      </div>
+    <>
+      {/* Tenant Loader */}
+      {tenantLoading && selectedTenant && (
+        <TenantLoader
+          tenantName={selectedTenant.name}
+          tenantSlug={selectedTenant.slug}
+          steps={loadingSteps}
+          progress={loadingProgress}
+        />
+      )}
 
-      {/* Top Bar */}
-      <header className="sticky top-0 z-20 border-b border-white/10 bg-black/45 backdrop-blur-xl">
-        {/* Linha 1: Logo + Controles */}
-        <div className="px-6 py-3 flex items-center justify-between gap-4">
-          {/* Brand */}
-          <div className="flex items-center gap-3">
-            <div className="h-10 w-10 rounded-2xl border border-white/10 bg-white/5 flex items-center justify-center overflow-hidden">
-              <img
-                src="https://assets.zyrosite.com/Yan0w5Vy86ho0JE8/docafff-AR01ja72GDhG0JOo.png"
-                alt="DOCA"
-                className="w-full h-full object-cover"
-              />
-            </div>
+      <div className="min-h-screen text-white bg-black">
+        {/* Decorative layer */}
+        <div className="pointer-events-none fixed inset-0">
+          <div className="absolute -top-32 left-[-140px] h-[520px] w-[520px] rounded-full bg-[#f57f17]/18 blur-3xl" />
+          <div className="absolute top-12 right-[-220px] h-[560px] w-[560px] rounded-full bg-cyan-500/12 blur-3xl" />
+          <div className="absolute bottom-[-260px] left-[18%] h-[620px] w-[620px] rounded-full bg-emerald-500/10 blur-3xl" />
+        </div>
 
-            <div className="leading-tight">
-              <p className="text-sm font-semibold text-white">DOCA AI</p>
-              <p className="text-xs text-gray-500">Central de Comando</p>
-            </div>
+        {/* Top Bar */}
+        <header className="sticky top-0 z-20 border-b border-white/10 bg-black/45 backdrop-blur-xl">
+          {/* Linha 1: Logo + Controles */}
+          <div className="px-6 py-3 flex items-center justify-between gap-4">
+            {/* Brand */}
+            <div className="flex items-center gap-3">
+              <div className="h-10 w-10 rounded-2xl border border-white/10 bg-white/5 flex items-center justify-center overflow-hidden">
+                <img
+                  src="https://assets.zyrosite.com/Yan0w5Vy86ho0JE8/docafff-AR01ja72GDhG0JOo.png"
+                  alt="DOCA"
+                  className="w-full h-full object-cover"
+                />
+              </div>
 
-            <span className="hidden sm:inline ml-2 px-2.5 py-1 rounded-full text-[11px] font-semibold bg-[#f57f17]/10 text-[#f57f17] border border-[#f57f17]/20">
-              BETA
-            </span>
+              <div className="leading-tight">
+                <p className="text-sm font-semibold text-white">DOCA AI</p>
+                <p className="text-xs text-gray-500">Central de Comando</p>
+              </div>
 
-            {demoMode && (
-              <span className="hidden sm:inline ml-2 px-2.5 py-1 rounded-full text-[11px] font-semibold bg-white/5 text-gray-200 border border-white/10">
-                DEMO
+              <span className="hidden sm:inline ml-2 px-2.5 py-1 rounded-full text-[11px] font-semibold bg-[#f57f17]/10 text-[#f57f17] border border-[#f57f17]/20">
+                BETA
               </span>
-            )}
-          </div>
 
-          {/* Right controls */}
-          <div className="flex items-center gap-2">
-            {/* Tenant Selector (prod only) */}
-            {!demoMode && isAdmin && (
-              <TenantSelector
-                value={selectedTenantId}
-                onChange={setSelectedTenantId}
-              />
-            )}
+              {demoMode && (
+                <span className="hidden sm:inline ml-2 px-2.5 py-1 rounded-full text-[11px] font-semibold bg-white/5 text-gray-200 border border-white/10">
+                  DEMO
+                </span>
+              )}
+            </div>
 
-            {/* Industry selector (demo) */}
-            {demoMode && (
+            {/* Right controls */}
+            <div className="flex items-center gap-2">
+              {/* Tenant Selector (prod only) */}
+              {!demoMode && isAdmin && (
+                <TenantSelector
+                  value={selectedTenantId}
+                  onChange={setSelectedTenantId}
+                />
+              )}
+
+              {/* Industry selector (demo) */}
+              {demoMode && (
+                <div className="relative">
+                  <button
+                    onClick={() => setIndustryOpen((v) => !v)}
+                    className="h-10 px-4 rounded-2xl border border-white/10 bg-white/5 hover:bg-white/10 transition-all flex items-center gap-2 text-sm font-semibold text-gray-200"
+                  >
+                    <span className="hidden sm:inline">{activeDemoLabel}</span>
+                    <ChevronDown className="w-4 h-4 text-gray-400" />
+                  </button>
+
+                  {industryOpen && (
+                    <div className="absolute right-0 mt-2 w-72 rounded-2xl border border-white/10 bg-black/85 backdrop-blur-xl shadow-xl overflow-hidden z-30">
+                      {demoOptions.map((i) => (
+                            <a
+                              key={i.key}
+                              href={`/?demo=${i.key}`}
+                              className="block px-4 py-3 text-sm text-gray-200 hover:bg-white/5"
+                            >
+                              <div className="flex items-center justify-between gap-3">
+                                <span className="truncate">{i.label}</span>
+                                <span className="text-[11px] rounded-full border border-white/10 bg-white/5 px-2 py-0.5 text-gray-400">
+                                  {i.source === "generated" ? "GERADA" : "FIXA"}
+                                </span>
+                              </div>
+                            </a>
+                          ))}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Bell */}
               <div className="relative">
                 <button
-                  onClick={() => setIndustryOpen((v) => !v)}
-                  className="h-10 px-4 rounded-2xl border border-white/10 bg-white/5 hover:bg-white/10 transition-all flex items-center gap-2 text-sm font-semibold text-gray-200"
+                  onClick={() => setNotificationsOpen(v => !v)}
+                  className="h-10 w-10 rounded-2xl border border-white/10 bg-white/5 hover:bg-white/10 transition-all flex items-center justify-center relative"
+                  title="Notificações"
                 >
-                  <span className="hidden sm:inline">{activeDemoLabel}</span>
-                  <ChevronDown className="w-4 h-4 text-gray-400" />
+                  <Bell className="w-4 h-4 text-gray-300" />
+                  {unreadCount > 0 && (
+                    <span className="absolute -top-1 -right-1 h-5 w-5 rounded-full bg-[#f57f17] text-[10px] font-bold text-white flex items-center justify-center">
+                      {unreadCount}
+                    </span>
+                  )}
                 </button>
 
-                {industryOpen && (
-                  <div className="absolute right-0 mt-2 w-72 rounded-2xl border border-white/10 bg-black/85 backdrop-blur-xl shadow-xl overflow-hidden z-30">
-                    {demoOptions.map((i) => (
-                          <a
-                            key={i.key}
-                            href={`/?demo=${i.key}`}
-                            className="block px-4 py-3 text-sm text-gray-200 hover:bg-white/5"
+                {notificationsOpen && (
+                  <>
+                    <div 
+                      className="fixed inset-0 z-40" 
+                      onClick={() => setNotificationsOpen(false)} 
+                    />
+                    
+                    <div className="absolute right-0 mt-2 w-80 rounded-2xl border border-white/10 bg-black/90 backdrop-blur-xl shadow-xl z-50 overflow-hidden">
+                      <div className="px-4 py-3 border-b border-white/10 flex items-center justify-between">
+                        <h3 className="text-sm font-semibold text-white">Notificações</h3>
+                        {unreadCount > 0 && (
+                          <button
+                            onClick={markAllRead}
+                            className="text-xs text-[#f57f17] hover:underline"
                           >
-                            <div className="flex items-center justify-between gap-3">
-                              <span className="truncate">{i.label}</span>
-                              <span className="text-[11px] rounded-full border border-white/10 bg-white/5 px-2 py-0.5 text-gray-400">
-                                {i.source === "generated" ? "GERADA" : "FIXA"}
-                              </span>
-                            </div>
-                          </a>
-                        ))}
-                  </div>
+                            Marcar todas como lidas
+                          </button>
+                        )}
+                      </div>
+                      
+                      <div className="max-h-80 overflow-y-auto">
+                        {notifications.length === 0 ? (
+                          <div className="px-4 py-8 text-center text-gray-500 text-sm">
+                            Nenhuma notificação
+                          </div>
+                        ) : (
+                          notifications.map(n => (
+                            <button
+                              key={n.id}
+                              onClick={() => markNotificationRead(n.id)}
+                              className={cn(
+                                "w-full px-4 py-3 text-left hover:bg-white/5 border-b border-white/5 last:border-0",
+                                !n.read && "bg-white/5"
+                              )}
+                            >
+                              <div className="flex items-start gap-3">
+                                <div className={cn(
+                                  "h-8 w-8 rounded-lg flex items-center justify-center flex-shrink-0",
+                                  n.type === "urgent" && "bg-red-500/20 text-red-400",
+                                  n.type === "lead" && "bg-emerald-500/20 text-emerald-400",
+                                  n.type === "system" && "bg-white/10 text-gray-400"
+                                )}>
+                                  {n.type === "urgent" && <AlertTriangle className="w-4 h-4" />}
+                                  {n.type === "lead" && <Users className="w-4 h-4" />}
+                                  {n.type === "system" && <Settings className="w-4 h-4" />}
+                                </div>
+                                <div className="flex-1 min-w-0">
+                                  <div className="flex items-center justify-between gap-2">
+                                    <p className="text-sm font-medium text-white truncate">{n.title}</p>
+                                    {!n.read && (
+                                      <span className="h-2 w-2 rounded-full bg-[#f57f17] flex-shrink-0" />
+                                    )}
+                                  </div>
+                                  <p className="text-xs text-gray-500 truncate">{n.message}</p>
+                                  <p className="text-[10px] text-gray-600 mt-1">
+                                    {formatTimeAgo(n.time)}
+                                  </p>
+                                </div>
+                              </div>
+                            </button>
+                          ))
+                        )}
+                      </div>
+                      
+                      <div className="px-4 py-2 border-t border-white/10">
+                        <button
+                          onClick={() => {
+                            setNotificationsOpen(false);
+                            setCurrentPage("settings");
+                          }}
+                          className="w-full h-9 rounded-lg bg-white/5 hover:bg-white/10 text-xs text-gray-400"
+                        >
+                          Configurar notificações
+                        </button>
+                      </div>
+                    </div>
+                  </>
                 )}
               </div>
-            )}
 
-            {/* Bell */}
-            <div className="relative">
+              {/* Agent ON/OFF (prod only) */}
+              {!demoMode && <AgentToggle />}
+
+              {/* Refresh */}
               <button
-                onClick={() => setNotificationsOpen(v => !v)}
-                className="h-10 w-10 rounded-2xl border border-white/10 bg-white/5 hover:bg-white/10 transition-all flex items-center justify-center relative"
-                title="Notificações"
+                onClick={() => loadData(false)}
+                disabled={refreshing}
+                className="h-10 px-4 rounded-2xl border border-white/10 bg-white/5 hover:bg-white/10 transition-all flex items-center gap-2 text-sm font-semibold text-gray-200 disabled:opacity-50"
+                title="Atualizar"
               >
-                <Bell className="w-4 h-4 text-gray-300" />
-                {unreadCount > 0 && (
-                  <span className="absolute -top-1 -right-1 h-5 w-5 rounded-full bg-[#f57f17] text-[10px] font-bold text-white flex items-center justify-center">
-                    {unreadCount}
-                  </span>
-                )}
+                <RefreshCw className={cn("w-4 h-4 text-[#f57f17]", refreshing && "animate-spin")} />
+                <span className="hidden sm:inline">{refreshing ? "Atualizando..." : "Atualizar"}</span>
               </button>
 
-              {notificationsOpen && (
-                <>
-                  <div 
-                    className="fixed inset-0 z-40" 
-                    onClick={() => setNotificationsOpen(false)} 
-                  />
-                  
-                  <div className="absolute right-0 mt-2 w-80 rounded-2xl border border-white/10 bg-black/90 backdrop-blur-xl shadow-xl z-50 overflow-hidden">
-                    <div className="px-4 py-3 border-b border-white/10 flex items-center justify-between">
-                      <h3 className="text-sm font-semibold text-white">Notificações</h3>
-                      {unreadCount > 0 && (
-                        <button
-                          onClick={markAllRead}
-                          className="text-xs text-[#f57f17] hover:underline"
-                        >
-                          Marcar todas como lidas
-                        </button>
-                      )}
-                    </div>
-                    
-                    <div className="max-h-80 overflow-y-auto">
-                      {notifications.length === 0 ? (
-                        <div className="px-4 py-8 text-center text-gray-500 text-sm">
-                          Nenhuma notificação
-                        </div>
-                      ) : (
-                        notifications.map(n => (
-                          <button
-                            key={n.id}
-                            onClick={() => markNotificationRead(n.id)}
-                            className={cn(
-                              "w-full px-4 py-3 text-left hover:bg-white/5 border-b border-white/5 last:border-0",
-                              !n.read && "bg-white/5"
-                            )}
-                          >
-                            <div className="flex items-start gap-3">
-                              <div className={cn(
-                                "h-8 w-8 rounded-lg flex items-center justify-center flex-shrink-0",
-                                n.type === "urgent" && "bg-red-500/20 text-red-400",
-                                n.type === "lead" && "bg-emerald-500/20 text-emerald-400",
-                                n.type === "system" && "bg-white/10 text-gray-400"
-                              )}>
-                                {n.type === "urgent" && <AlertTriangle className="w-4 h-4" />}
-                                {n.type === "lead" && <Users className="w-4 h-4" />}
-                                {n.type === "system" && <Settings className="w-4 h-4" />}
-                              </div>
-                              <div className="flex-1 min-w-0">
-                                <div className="flex items-center justify-between gap-2">
-                                  <p className="text-sm font-medium text-white truncate">{n.title}</p>
-                                  {!n.read && (
-                                    <span className="h-2 w-2 rounded-full bg-[#f57f17] flex-shrink-0" />
-                                  )}
-                                </div>
-                                <p className="text-xs text-gray-500 truncate">{n.message}</p>
-                                <p className="text-[10px] text-gray-600 mt-1">
-                                  {formatTimeAgo(n.time)}
-                                </p>
-                              </div>
-                            </div>
-                          </button>
-                        ))
-                      )}
-                    </div>
-                    
-                    <div className="px-4 py-2 border-t border-white/10">
-                      <button
-                        onClick={() => {
-                          setNotificationsOpen(false);
-                          setCurrentPage("settings");
-                        }}
-                        className="w-full h-9 rounded-lg bg-white/5 hover:bg-white/10 text-xs text-gray-400"
-                      >
-                        Configurar notificações
-                      </button>
-                    </div>
-                  </div>
-                </>
-              )}
-            </div>
-
-            {/* Agent ON/OFF (prod only) */}
-            {!demoMode && <AgentToggle />}
-
-            {/* Refresh */}
-            <button
-              onClick={() => loadData(false)}
-              disabled={refreshing}
-              className="h-10 px-4 rounded-2xl border border-white/10 bg-white/5 hover:bg-white/10 transition-all flex items-center gap-2 text-sm font-semibold text-gray-200 disabled:opacity-50"
-              title="Atualizar"
-            >
-              <RefreshCw className={cn("w-4 h-4 text-[#f57f17]", refreshing && "animate-spin")} />
-              <span className="hidden sm:inline">{refreshing ? "Atualizando..." : "Atualizar"}</span>
-            </button>
-
-{/* Avatar com Dropdown */}
-            <div className="relative">
-              <button
-                onClick={() => setProfileMenuOpen(!profileMenuOpen)}
-                className="h-10 px-3 rounded-2xl border border-white/10 bg-white/5 hover:bg-white/10 flex items-center gap-3 transition-all"
-              >
-                <div className="h-8 w-8 rounded-2xl bg-[#f57f17]/15 border border-[#f57f17]/25 flex items-center justify-center">
-                  <span className="text-[#f57f17] font-bold text-sm">D</span>
-                </div>
-                <div className="leading-tight hidden sm:block">
-                  <p className="text-sm font-semibold text-white">DOCA</p>
-                  <p className="text-xs text-gray-500">Admin</p>
-                </div>
-                <ChevronDown className={`w-4 h-4 text-gray-400 transition-transform ${profileMenuOpen ? "rotate-180" : ""}`} />
-              </button>
-
-              {profileMenuOpen && (
-                <>
-                  <div className="fixed inset-0 z-40" onClick={() => setProfileMenuOpen(false)} />
-                  <div className="absolute right-0 mt-2 w-56 rounded-2xl border border-white/10 bg-black/95 backdrop-blur-xl shadow-xl z-50 overflow-hidden">
-                    <div className="px-4 py-3 border-b border-white/10">
-                      <p className="text-sm font-semibold text-white">DOCA Agência IA</p>
-                      <p className="text-xs text-gray-500">admin@docaperformance.com.br</p>
-                    </div>
-                    <div className="py-2">
-                      <button
-                        onClick={() => { setCurrentPage("users"); setProfileMenuOpen(false); }}
-                        className="w-full px-4 py-2 text-left text-sm text-gray-300 hover:bg-white/5 flex items-center gap-3"
-                      >
-                        <Users className="w-4 h-4" />
-                        Usuários
-                      </button>
-                      <button
-                        onClick={() => { setCurrentPage("tenants"); setProfileMenuOpen(false); }}
-                        className="w-full px-4 py-2 text-left text-sm text-gray-300 hover:bg-white/5 flex items-center gap-3"
-                      >
-                        <Building2 className="w-4 h-4" />
-                        Clientes
-                      </button>
-                      <button
-                        onClick={() => { setCurrentPage("metrics"); setProfileMenuOpen(false); }}
-                        className="w-full px-4 py-2 text-left text-sm text-gray-300 hover:bg-white/5 flex items-center gap-3"
-                      >
-                        <BarChart3 className="w-4 h-4" />
-                        Métricas
-                      </button>
-                    </div>
-                    <div className="py-2 border-t border-white/10">
-                      <button
-                        onClick={() => { setCurrentPage("settings"); setProfileMenuOpen(false); }}
-                        className="w-full px-4 py-2 text-left text-sm text-gray-300 hover:bg-white/5 flex items-center gap-3"
-                      >
-                        <Settings className="w-4 h-4" />
-                        Configurações
-                      </button>
-                    </div>
-                  </div>
-                </>
-              )}
-            </div>
-          </div>
-        </div>
-
-        {/* Linha 2: Menu de navegação */}
-        <div className="px-6 py-2 border-t border-white/5">
-          <div className="flex flex-wrap items-center gap-2">
-            {menuItems.map((item) => {
-              const active = currentPage === item.id;
-              return (
+              {/* Avatar com Dropdown */}
+              <div className="relative">
                 <button
-                  key={item.id}
-                  onClick={() => setCurrentPage(item.id)}
-                  className={cn(
-                    "h-9 px-3 rounded-xl border transition-all flex items-center gap-2 text-sm font-semibold whitespace-nowrap",
-                    active
-                      ? "border-[#f57f17]/35 bg-[#f57f17]/10 text-white shadow-[0_0_0_1px_rgba(245,127,23,0.14)]"
-                      : "border-white/10 bg-white/5 text-gray-300 hover:bg-white/10"
-                  )}
+                  onClick={() => setProfileMenuOpen(!profileMenuOpen)}
+                  className="h-10 px-3 rounded-2xl border border-white/10 bg-white/5 hover:bg-white/10 flex items-center gap-3 transition-all"
                 >
-                  <item.icon className="w-4 h-4 text-[#f57f17]" />
-                  {item.label}
+                  <div className="h-8 w-8 rounded-2xl bg-[#f57f17]/15 border border-[#f57f17]/25 flex items-center justify-center">
+                    <span className="text-[#f57f17] font-bold text-sm">D</span>
+                  </div>
+                  <div className="leading-tight hidden sm:block">
+                    <p className="text-sm font-semibold text-white">DOCA</p>
+                    <p className="text-xs text-gray-500">Admin</p>
+                  </div>
+                  <ChevronDown className={`w-4 h-4 text-gray-400 transition-transform ${profileMenuOpen ? "rotate-180" : ""}`} />
                 </button>
-              );
-            })}
-          </div>
-        </div>
 
-        {/* Subheader */}
-        <div className="px-6 pb-4 flex items-start justify-between gap-4">
-          <div>
-            <div className="text-xs text-gray-500">
-              DOCA AI <span className="mx-2 text-gray-700">›</span>{" "}
-              <span className="text-gray-300 font-semibold">{currentLabel}</span>
+                {profileMenuOpen && (
+                  <>
+                    <div className="fixed inset-0 z-40" onClick={() => setProfileMenuOpen(false)} />
+                    <div className="absolute right-0 mt-2 w-56 rounded-2xl border border-white/10 bg-black/95 backdrop-blur-xl shadow-xl z-50 overflow-hidden">
+                      <div className="px-4 py-3 border-b border-white/10">
+                        <p className="text-sm font-semibold text-white">DOCA Agência IA</p>
+                        <p className="text-xs text-gray-500">admin@docaperformance.com.br</p>
+                      </div>
+                      <div className="py-2">
+                        <button
+                          onClick={() => { setCurrentPage("users"); setProfileMenuOpen(false); }}
+                          className="w-full px-4 py-2 text-left text-sm text-gray-300 hover:bg-white/5 flex items-center gap-3"
+                        >
+                          <Users className="w-4 h-4" />
+                          Usuários
+                        </button>
+                        <button
+                          onClick={() => { setCurrentPage("tenants"); setProfileMenuOpen(false); }}
+                          className="w-full px-4 py-2 text-left text-sm text-gray-300 hover:bg-white/5 flex items-center gap-3"
+                        >
+                          <Building2 className="w-4 h-4" />
+                          Clientes
+                        </button>
+                        <button
+                          onClick={() => { setCurrentPage("metrics"); setProfileMenuOpen(false); }}
+                          className="w-full px-4 py-2 text-left text-sm text-gray-300 hover:bg-white/5 flex items-center gap-3"
+                        >
+                          <BarChart3 className="w-4 h-4" />
+                          Métricas
+                        </button>
+                      </div>
+                      <div className="py-2 border-t border-white/10">
+                        <button
+                          onClick={() => { setCurrentPage("settings"); setProfileMenuOpen(false); }}
+                          className="w-full px-4 py-2 text-left text-sm text-gray-300 hover:bg-white/5 flex items-center gap-3"
+                        >
+                          <Settings className="w-4 h-4" />
+                          Configurações
+                        </button>
+                      </div>
+                    </div>
+                  </>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* Linha 2: Menu de navegação */}
+          <div className="px-6 py-2 border-t border-white/5">
+            <div className="flex flex-wrap items-center gap-2">
+              {menuItems.map((item) => {
+                const active = currentPage === item.id;
+                return (
+                  <button
+                    key={item.id}
+                    onClick={() => setCurrentPage(item.id)}
+                    className={cn(
+                      "h-9 px-3 rounded-xl border transition-all flex items-center gap-2 text-sm font-semibold whitespace-nowrap",
+                      active
+                        ? "border-[#f57f17]/35 bg-[#f57f17]/10 text-white shadow-[0_0_0_1px_rgba(245,127,23,0.14)]"
+                        : "border-white/10 bg-white/5 text-gray-300 hover:bg-white/10"
+                    )}
+                  >
+                    <item.icon className="w-4 h-4 text-[#f57f17]" />
+                    {item.label}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Subheader */}
+          <div className="px-6 pb-4 flex items-start justify-between gap-4">
+            <div>
+              <div className="text-xs text-gray-500">
+                DOCA AI <span className="mx-2 text-gray-700">›</span>{" "}
+                <span className="text-gray-300 font-semibold">{currentLabel}</span>
+              </div>
+
+              <h2 className="text-3xl font-bold tracking-tight text-white mt-1">
+                {currentLabel}
+              </h2>
+              <p className="text-sm text-gray-500 mt-1">{currentDesc}</p>
             </div>
 
-            <h2 className="text-3xl font-bold tracking-tight text-white mt-1">
-              {currentLabel}
-            </h2>
-            <p className="text-sm text-gray-500 mt-1">{currentDesc}</p>
+            <div className="hidden md:flex items-center gap-6 text-xs text-gray-500 mt-1">
+              <div>
+                Status:{" "}
+                <span className="text-[#f57f17] font-semibold">
+                  {demoMode ? "DEMO" : "Online"}
+                </span>
+              </div>
+              <div>Atualizado: {lastUpdate.toLocaleTimeString("pt-BR")}</div>
+            </div>
+          </div>
+        </header>
+
+        {/* Content */}
+        <main className="px-6 py-6">
+          <div className="rounded-[28px] border border-white/10 bg-white/[0.03] backdrop-blur-xl shadow-[0_0_0_1px_rgba(255,255,255,0.05)]">
+            <div className="p-8">
+              {currentPage === "dashboard" && (
+                <DashboardV2
+                  demoMode={demoMode}
+                  stats={stats}
+                  conversations={conversations as any}
+                  leads={leads as any}
+                  onOpenSuggestions={() => setAiModalOpen(true)}
+                  onOpenInsights={() => setCurrentPage("analysis")}
+                  onActivateAI={() => setCurrentPage("analysis")}
+                  onGoToAnalysis={() => setCurrentPage("analysis")}
+                  onOpenEvents={() => setCurrentPage("reports")}
+                />
+              )}
+
+              {currentPage === "conversations" && <ConversationsPage tenantId={selectedTenantId} />}
+
+              {currentPage === "leads" && (
+                <LeadsPage
+                  leads={leads}
+                  conversations={conversations as any}
+                  onOpenConversation={handleOpenConversation}
+                  onSendFollowUp={handleSendFollowUp}
+                  onMarkAsWon={handleMarkAsWon}
+                />
+              )}
+
+              {currentPage === "funnel" && (
+                <FunnelPage
+                  leads={leads}
+                  conversations={conversations as any}
+                  onOpenConversation={handleOpenConversation}
+                  onSendFollowUp={handleSendFollowUp}
+                  onMarkAsWon={handleMarkAsWon}
+                />
+              )}
+
+              {currentPage === "analysis" && (
+                <AIAnalysisPage
+                  tenantId={selectedTenantId}
+                  conversations={conversations}
+                  leads={leads}
+                  onSendFollowUp={handleSendFollowUp}
+                  onOpenConversation={handleOpenConversation}
+                />
+              )}
+
+              {currentPage === "reports" && (
+                <ReportsPage 
+                  leads={leads}
+                  conversations={conversations as any}
+                  onGoToFunnel={() => setCurrentPage("funnel")} 
+                />
+              )}
+
+              {currentPage === "training" && <TrainingPage tenantId={selectedTenantId} />}
+
+              {currentPage === "integrations" && <IntegrationsPage tenantId={selectedTenantId} />}
+
+              {currentPage === "agent-studio" && <AgentStudioPage tenantId={selectedTenantId} />}
+
+              {currentPage === "settings" && <SettingsPage />}
+              {currentPage === "users" && <UsersPage />}
+              {currentPage === "tenants" && (
+                <TenantsPage
+                  selectedTenantId={selectedTenantId}
+                  onSelectTenant={(id) => {
+                    setSelectedTenantId(id);
+                  }}
+                  onConfigure={(id) => {
+                    setConfigTenantId(id);
+                    setCurrentPage("tenant-config");
+                  }}
+                />
+              )}
+              {currentPage === "metrics" && <MetricsPage />}
+              {currentPage === "tenant-config" && configTenantId && (
+                <TenantConfigPage
+                  tenantId={configTenantId}
+                  onBack={() => setCurrentPage("tenants")}
+                />
+              )}
+
+              {currentPage === "demo-generator" && <DemoGeneratorPage />}
+            </div>
           </div>
 
-          <div className="hidden md:flex items-center gap-6 text-xs text-gray-500 mt-1">
-            <div>
+          <div className="mt-6 flex items-center justify-between text-xs text-gray-500">
+            <span>© {new Date().getFullYear()} DOCA AI</span>
+            <span className="text-gray-500">
               Status:{" "}
               <span className="text-[#f57f17] font-semibold">
                 {demoMode ? "DEMO" : "Online"}
               </span>
-            </div>
-            <div>Atualizado: {lastUpdate.toLocaleTimeString("pt-BR")}</div>
-          </div>
-        </div>
-      </header>
-
-      {/* Content */}
-      <main className="px-6 py-6">
-        <div className="rounded-[28px] border border-white/10 bg-white/[0.03] backdrop-blur-xl shadow-[0_0_0_1px_rgba(255,255,255,0.05)]">
-          <div className="p-8">
-            {currentPage === "dashboard" && (
-              <DashboardV2
-                demoMode={demoMode}
-                stats={stats}
-                conversations={conversations as any}
-                leads={leads as any}
-                onOpenSuggestions={() => setAiModalOpen(true)}
-                onOpenInsights={() => setCurrentPage("analysis")}
-                onActivateAI={() => setCurrentPage("analysis")}
-                onGoToAnalysis={() => setCurrentPage("analysis")}
-                onOpenEvents={() => setCurrentPage("reports")}
-              />
-            )}
-
-            {currentPage === "conversations" && <ConversationsPage tenantId={selectedTenantId} />}
-
-            {currentPage === "leads" && (
-              <LeadsPage
-                leads={leads}
-                conversations={conversations as any}
-                onOpenConversation={handleOpenConversation}
-                onSendFollowUp={handleSendFollowUp}
-                onMarkAsWon={handleMarkAsWon}
-              />
-            )}
-
-            {currentPage === "funnel" && (
-              <FunnelPage
-                leads={leads}
-                conversations={conversations as any}
-                onOpenConversation={handleOpenConversation}
-                onSendFollowUp={handleSendFollowUp}
-                onMarkAsWon={handleMarkAsWon}
-              />
-            )}
-
-            {currentPage === "analysis" && (
-              <AIAnalysisPage
-                tenantId={selectedTenantId}
-                conversations={conversations}
-                leads={leads}
-                onSendFollowUp={handleSendFollowUp}
-                onOpenConversation={handleOpenConversation}
-              />
-            )}
-
-            {currentPage === "reports" && (
-              <ReportsPage 
-                leads={leads}
-                conversations={conversations as any}
-                onGoToFunnel={() => setCurrentPage("funnel")} 
-              />
-            )}
-
-            {currentPage === "training" && <TrainingPage tenantId={selectedTenantId} />}
-
-            {currentPage === "integrations" && <IntegrationsPage />}
-
-            {currentPage === "agent-studio" && <AgentStudioPage tenantId={selectedTenantId} />}
-
-            {currentPage === "settings" && <SettingsPage />}
-            {currentPage === "users" && <UsersPage />}
-            {currentPage === "tenants" && (
-  <TenantsPage
-    selectedTenantId={selectedTenantId}
-    onSelectTenant={(id) => {
-      setSelectedTenantId(id);
-    }}
-    onConfigure={(id) => {
-      setConfigTenantId(id);
-      setCurrentPage("tenant-config");
-    }}
-  />
-)}
-            {currentPage === "metrics" && <MetricsPage />}
-            {currentPage === "tenant-config" && configTenantId && (
-              <TenantConfigPage
-                tenantId={configTenantId}
-                onBack={() => setCurrentPage("tenants")}
-              />
-            )}
-
-            {currentPage === "demo-generator" && <DemoGeneratorPage />}
-          </div>
-        </div>
-
-        <div className="mt-6 flex items-center justify-between text-xs text-gray-500">
-          <span>© {new Date().getFullYear()} DOCA AI</span>
-          <span className="text-gray-500">
-            Status:{" "}
-            <span className="text-[#f57f17] font-semibold">
-              {demoMode ? "DEMO" : "Online"}
             </span>
-          </span>
-        </div>
-      </main>
+          </div>
+        </main>
 
-      {/* Modal IA global */}
-      <AISuggestionsModal
-        open={aiModalOpen}
-        onClose={() => setAiModalOpen(false)}
-        onGoToAnalysis={() => setCurrentPage("analysis")}
-      />
+        {/* Modal IA global */}
+        <AISuggestionsModal
+          open={aiModalOpen}
+          onClose={() => setAiModalOpen(false)}
+          onGoToAnalysis={() => setCurrentPage("analysis")}
+        />
 
-      {/* Toast de notificação */}
-      {notification && (
-        <div
-          className={cn(
-            "fixed bottom-6 right-6 z-50 px-5 py-3 rounded-2xl border shadow-xl backdrop-blur-xl transition-all animate-in slide-in-from-bottom-4",
-            notification.type === 'success'
-              ? "bg-emerald-500/20 border-emerald-400/30 text-emerald-200"
-              : "bg-red-500/20 border-red-400/30 text-red-200"
-          )}
-        >
-          <p className="text-sm font-medium">{notification.message}</p>
-        </div>
-      )}
-    </div>
+        {/* Toast de notificação */}
+        {notification && (
+          <div
+            className={cn(
+              "fixed bottom-6 right-6 z-50 px-5 py-3 rounded-2xl border shadow-xl backdrop-blur-xl transition-all animate-in slide-in-from-bottom-4",
+              notification.type === 'success'
+                ? "bg-emerald-500/20 border-emerald-400/30 text-emerald-200"
+                : "bg-red-500/20 border-red-400/30 text-red-200"
+            )}
+          >
+            <p className="text-sm font-medium">{notification.message}</p>
+          </div>
+        )}
+      </div>
+    </>
   );
 }

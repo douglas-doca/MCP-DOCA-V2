@@ -62,11 +62,18 @@ export class SupabaseService {
         headers["Accept"] = "application/vnd.pgrst.object+json";
       }
 
+      // Timeout de 15 segundos
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 15000);
+      
       const response = await fetch(url, {
         method,
         headers,
         body: options?.body ? JSON.stringify(options.body) : undefined,
+        signal: controller.signal,
       });
+      
+      clearTimeout(timeoutId);
 
       if (!response.ok) {
         const error = await response.text();
@@ -501,15 +508,16 @@ export class SupabaseService {
 
   // ============ Dashboard API Methods ============
 
-  async getConversations(limit: number = 50): Promise<any[]> {
+  async getConversations(limit: number = 50, tenantId?: string): Promise<any[]> {
     const result = await this.request<any[]>("GET", "conversations", {
-      query: `order=updated_at.desc&limit=${limit}`,
+      query: tenantId ? `tenant_id=eq.${tenantId}&order=updated_at.desc&limit=${limit}` : `order=updated_at.desc&limit=${limit}`,
     });
     return result || [];
   }
 
-  async getLeads(status?: string, limit: number = 50): Promise<any[]> {
+  async getLeads(status?: string, limit: number = 50, tenantId?: string): Promise<any[]> {
     let query = `order=updated_at.desc&limit=${limit}`;
+    if (tenantId) query = `tenant_id=eq.${tenantId}&${query}`;
     if (status) query = `status=eq.${status}&${query}`;
 
     const result = await this.request<any[]>("GET", "leads", { query });

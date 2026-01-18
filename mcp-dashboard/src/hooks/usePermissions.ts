@@ -9,6 +9,14 @@ export type Permission =
   | "manage_settings";
 
 const ROLE_PERMISSIONS: Record<string, Permission[]> = {
+  super_admin: [
+    "view_all_tenants",
+    "manage_users",
+    "manage_tenants",
+    "view_metrics",
+    "export_data",
+    "manage_settings",
+  ],
   admin: [
     "view_all_tenants",
     "manage_users",
@@ -17,15 +25,22 @@ const ROLE_PERMISSIONS: Record<string, Permission[]> = {
     "export_data",
     "manage_settings",
   ],
+  tenant_admin: [
+    "view_metrics",
+    "export_data",
+    "manage_settings",
+  ],
   manager: [
     "view_metrics",
     "export_data",
   ],
+  agent: [],
+  viewer: [],
   user: [],
 };
 
 export function usePermissions() {
-  const { profile, tenant } = useAuth();
+  const { profile, tenant, isSuperAdmin } = useAuth();
   
   const role = profile?.role || "user";
   const permissions = ROLE_PERMISSIONS[role] || [];
@@ -41,7 +56,7 @@ export function usePermissions() {
   const canExportData = hasPermission("export_data");
   const canManageSettings = hasPermission("manage_settings");
   
-  // Manager só vê seu próprio tenant
+  // Super admin sem tenant selecionado vê tudo, outros veem só seu tenant
   const allowedTenantId = canViewAllTenants ? null : tenant?.id;
   
   return {
@@ -55,8 +70,13 @@ export function usePermissions() {
     canExportData,
     canManageSettings,
     allowedTenantId,
-    isAdmin: role === "admin",
+    // Reconhece tanto super_admin quanto admin como "admin"
+    isAdmin: role === "super_admin" || role === "admin",
+    isSuperAdmin,
+    isTenantAdmin: role === "tenant_admin",
     isManager: role === "manager",
+    isAgent: role === "agent",
+    isViewer: role === "viewer",
     isUser: role === "user",
   };
 }

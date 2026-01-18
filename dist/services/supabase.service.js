@@ -395,14 +395,16 @@ export class SupabaseService {
         });
     }
     // ============ Dashboard API Methods ============
-    async getConversations(limit = 50) {
+    async getConversations(limit = 50, tenantId) {
         const result = await this.request("GET", "conversations", {
-            query: `order=updated_at.desc&limit=${limit}`,
+            query: tenantId ? `tenant_id=eq.${tenantId}&order=updated_at.desc&limit=${limit}` : `order=updated_at.desc&limit=${limit}`,
         });
         return result || [];
     }
-    async getLeads(status, limit = 50) {
+    async getLeads(status, limit = 50, tenantId) {
         let query = `order=updated_at.desc&limit=${limit}`;
+        if (tenantId)
+            query = `tenant_id=eq.${tenantId}&${query}`;
         if (status)
             query = `status=eq.${status}&${query}`;
         const result = await this.request("GET", "leads", { query });

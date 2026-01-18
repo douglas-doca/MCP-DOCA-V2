@@ -113,19 +113,17 @@ async function getSetting(key: string): Promise<any | null> {
   if (result && result[0]) return result[0];
   return null;
 }
-async function upsertSetting(key: string, value: any, tenantId?: string | null): Promise<boolean> {
+
+async function upsertSetting(key: string, value: any): Promise<boolean> {
   const now = new Date().toISOString();
 
-  // Query com tenant_id
-  const tenantFilter = tenantId ? `key=eq.${key}&tenant_id=eq.${tenantId}` : `key=eq.${key}&tenant_id=is.null`;
-
   const existing = await supabaseService.request<any[]>("GET", "settings", {
-    query: tenantFilter,
+    query: `key=eq.${key}`,
   });
 
   if (existing && existing.length > 0) {
     const patched = await supabaseService.request("PATCH", "settings", {
-      query: tenantFilter,
+      query: `key=eq.${key}`,
       body: { value, updated_at: now },
     });
 
@@ -136,7 +134,6 @@ async function upsertSetting(key: string, value: any, tenantId?: string | null):
     body: {
       key,
       value,
-      tenant_id: tenantId || null,
       created_at: now,
       updated_at: now,
     },
@@ -883,20 +880,15 @@ export class WebhookServer {
     try {
       const url = new URL(req.url!, `http://${req.headers.host}`);
       const key = url.searchParams.get("key") || "agent_prompt";
-      const tenantId = url.searchParams.get("tenant_id") || null;
-
-      // Query com tenant_id
-      const tenantFilter = tenantId ? `key=eq.${key}\&tenant_id=eq.${tenantId}` : `key=eq.${key}\&tenant_id=is.null`;
 
       const result = await supabaseService.request<any[]>("GET", "settings", {
-        query: tenantFilter,
+        query: `key=eq.${key}`,
       });
 
       if (result && result[0]) {
-        this.sendJSON(res, 200, { key: result[0].key, value: result[0].value, tenant_id: result[0].tenant_id });
+        this.sendJSON(res, 200, { key: result[0].key, value: result[0].value });
       } else {
-        // Retorna null ao invés de 404 para settings não existentes
-        this.sendJSON(res, 200, { key, value: null, tenant_id: tenantId });
+        this.sendJSON(res, 404, { error: "Setting not found" });
       }
     } catch (error) {
       logger.error("Error getting settings", error);
@@ -906,25 +898,25 @@ export class WebhookServer {
 
   private async handleAPISaveSettings(_req: http.IncomingMessage, res: http.ServerResponse, body: string): Promise<void> {
     try {
-      const { key, value, tenant_id } = JSON.parse(body);
+      const { key, value } = JSON.parse(body);
 
       if (!key) {
         this.sendJSON(res, 400, { error: "Key is required" });
         return;
       }
 
-      const ok = await upsertSetting(key, value, tenant_id || null);
+      const ok = await upsertSetting(key, value);
       if (!ok) {
         this.sendJSON(res, 500, { error: "Failed to save setting" });
         return;
       }
 
-      this.sendJSON(res, 200, { success: true, key, tenant_id: tenant_id || null });
+      this.sendJSON(res, 200, { success: true, key });
     } catch (error) {
       logger.error("Error saving settings", error);
       this.sendJSON(res, 500, { error: "Failed to save settings" });
-  }
     }
+  }
 
   // ============ ✅ Agent ON/OFF (global) ============
 private async handleAgentStatus(_req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
